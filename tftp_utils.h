@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -19,4 +20,5 @@ typedef struct sockaddr_in sockaddr_in;
 
 void display_packet(const char *buffer, int size);
 int build_rrq_wrq(int op_code, char *buffer, char *filename);
+char *load_file(char *filename, size_t *data_size);
 int init_server_addr(sockaddr_in *server_addr);

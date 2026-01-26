@@ -63,15 +63,26 @@ void test_filename_limit()
     printf("OK (Erreur détectée)\n");
 }
 
-int main()
+void test_load_file()
 {
-    printf("=== DÉBUT DES TESTS UNITAIRES ===\n");
+    size_t size;
+    char *data = load_file("toto.txt", &size);
+    printf("Longueur du fichier : %ld\n", size);
+    printf("%s\n", data);
+}
 
+void test_build_rrq_wrq()
+{
+    printf("=== TESTS BUILD_RRQ_WRQ ===\n");
     test_rrq_success();
     test_wrq_success();
     test_invalid_opcode();
     test_filename_limit();
-
     printf("=== TOUS LES TESTS SONT PASSÉS ! ===\n");
+}
+int main()
+{
+    test_build_rrq_wrq();
+    test_load_file();
     return 0;
 }

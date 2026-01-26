@@ -74,7 +74,45 @@ int init_server_addr(sockaddr_in *server_addr)
     printf("Socket créée et adresse configurée.\n");
     return 0;
 }
-
-int split_data()
+// retourne une chaine contenant les données du fichier filename
+// et la taille de cette chaine via le pointeur data_size
+char *load_file(char *filename, size_t *data_size)
 {
+    FILE *file = fopen(filename, "rb");
+    size_t size;
+    char *data;
+    if (file == NULL)
+    {
+        fprintf(stderr, "Erreur: impossible de lire le fichier %s\n", filename);
+        return NULL;
+    }
+    // calcule taille du fichier
+    fseek(file, 0, SEEK_END);
+    size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    data = (char *)malloc(size * sizeof(char));
+    if (data == NULL)
+    {
+        fprintf(stderr, "Erreur: échec du malloc data\n");
+        fclose(file);
+        return NULL;
+    }
+    // on lit 1 octet size fois
+    fread(data, 1, size, file);
+    fclose(file);
+
+    *data_size = size;
+    return data;
+}
+int split_data(FILE *file, char *buffer)
+{
+    char c;
+    int data_len = 0;
+    while ((c = fgetc(file)) != EOF && data_len < 512)
+    {
+        buffer[data_len] = c;
+    }
+    // bzero(buffer);
+    return data_len;
 }
