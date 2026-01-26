@@ -4,7 +4,7 @@ int main(int argc, char **argv)
 {
     int sockfd;
     sockaddr_in server_addr;
-    char buffer[BUFFER_SIZE];
+    char buffer[DATA_SIZE];
 
     // creation socket
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
