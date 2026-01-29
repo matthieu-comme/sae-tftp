@@ -36,33 +36,6 @@ void display_packet(const char *buffer, int size)
     printf("\n------------------------------------------\n\n");
 }
 
-int build_rrq_wrq(int op_code, char *buffer, char *filename)
-{
-    if (op_code != OPCODE_RRQ && op_code != OPCODE_WRQ)
-    {
-        fprintf(stderr, "Erreur RRQ/WRQ: le code est ni RRQ ni WRQ\n");
-        return -1;
-    }
-    int filename_len = strlen(filename) + 1;
-    if (filename_len + 8 > DATA_SIZE)
-    {
-        printf("Erreur: nom du fichier trop long (%d octets)\n", filename_len);
-        return -1;
-    }
-
-    int offset = 0;
-    memcpy(buffer + offset, &op_code, 2);
-    offset += 2;
-
-    strcpy(buffer + offset, filename);
-    offset += filename_len;
-
-    strcpy(buffer + offset, "octet");
-    offset += strlen("octet") + 1;
-
-    return offset;
-}
-
 // config de l'adresse du serveur
 int init_server_addr(sockaddr_in *server_addr)
 {
@@ -106,15 +79,13 @@ char *load_file(char *filename, size_t *data_size)
     return data;
 }
 
-void send_data(int sockfd, sockaddr_in *addr, char *data, size_t data_size)
+void send_data(int sockfd, sockaddr_in *addr, unsigned char *data, size_t data_size)
 {
     size_t offset = 0;
     unsigned int block_number = 1;
     socklen_t addr_len = sizeof(sockaddr_in);
-    char packet[516];          // 4 (header) + 512 (data)
+    unsigned char packet[516]; // 4 (header) + 512 (data)
     int keep_sending = 1;      // booleen qui indique si on doit continuer d'envoyer
-    unsigned short opcode_net; // opcode pour le reseau (big vs little endian)
-    unsigned short block_net;  // pareil pour le numero de block
     size_t packet_len;
 
     // boucle des paquets
@@ -123,18 +94,7 @@ void send_data(int sockfd, sockaddr_in *addr, char *data, size_t data_size)
         size_t size_left = data_size - offset;
         size_t chunk_size = (size_left > DATA_SIZE) ? DATA_SIZE : size_left;
 
-        // construction du header du paquet
-        opcode_net = htons(OPCODE_DATA);
-        block_net = htons(block_number);
-
-        memcpy(packet, &opcode_net, 2);
-        memcpy(packet + 2, &block_net, 2);
-
-        if (chunk_size > 0)
-        {
-            memcpy(packet + 4, data + offset, chunk_size); // cpy data dans packet
-        }
-        packet_len = 4 + chunk_size;
+        packet_len = build_data(packet, sizeof(packet), block_number, data, data_size);
 
         // boucle de transmission
         unsigned short tries = 0;
@@ -142,15 +102,15 @@ void send_data(int sockfd, sockaddr_in *addr, char *data, size_t data_size)
 
         while (tries < MAX_RETRIES && !ack_received)
         { // envoi paquet
-            printf("Envoi bloc #%d (%zu octets)...\n");
-            sendto(sockfd, packet, packet_len, 0, addr, addr_len);
+            printf("Envoi bloc #%d (%zu octets)...\n", block_number, chunk_size);
+            sendto(sockfd, packet, packet_len, 0, (struct sockaddr *)addr, addr_len);
 
             // attend ACK
             char buffer_ack[4];
             sockaddr_in from_addr;
             socklen_t from_len = sizeof(from_addr);
 
-            int n = recvfrom(sockfd, buffer_ack, sizeof(buffer_ack), 0, &from_addr, &from_len);
+            int n = recvfrom(sockfd, buffer_ack, sizeof(buffer_ack), 0, (struct sockaddr *)&from_addr, &from_len);
             if (n < 0)
             {
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -197,7 +157,7 @@ void send_data(int sockfd, sockaddr_in *addr, char *data, size_t data_size)
     }
     printf("Transfert terminé avec succès\n");
 }
-
+/*
 int split_data(FILE *file, char *buffer)
 {
     char c;
@@ -208,4 +168,143 @@ int split_data(FILE *file, char *buffer)
     }
     // bzero(buffer);
     return data_len;
+}
+    */
+
+int safe_name(const char *name)
+{
+    if (name[0] == '/')
+        return 0;
+    if (strstr(name, "..") != NULL)
+        return 0;
+    return 1;
+}
+
+/* --------------- Builders --------------- */
+
+int build_rrq_wrq(uint16_t op_code, unsigned char *buffer, size_t buffer_size, const char *filename)
+{
+    if (op_code != OPCODE_RRQ && op_code != OPCODE_WRQ)
+    {
+        fprintf(stderr, "Erreur RRQ/WRQ: le code est ni RRQ ni WRQ\n");
+        return -1;
+    }
+    size_t filename_len = strlen(filename);
+    // opcode + len(filename) + \0 + len("octet") + \0
+    if (2 + filename_len + 1 + 5 + 1 > buffer_size)
+    {
+        fprintf(stderr, "Erreur: nom du fichier trop long (%ld octets)\n", filename_len);
+        return -1;
+    }
+
+    int offset = 0;
+    u_int16_t opn = htons(op_code);
+    memcpy(buffer + offset, &opn, 2);
+    offset += 2;
+
+    memcpy(buffer + offset, filename, filename_len + 1);
+    offset += filename_len + 1;
+
+    memcpy(buffer + offset, "octet", 6);
+    offset += strlen("octet") + 1;
+
+    return offset;
+}
+int build_data(uint8_t *buffer, size_t buffer_size, uint16_t block_number,
+               const uint8_t *data, size_t data_len)
+{
+    if (data_len > DATA_SIZE)
+        return -1;
+    if (buffer_size < 4 + data_len)
+        return -1;
+
+    uint16_t opn = htons(OPCODE_DATA); // opcode pour le reseau (big vs little endian)
+    uint16_t bn = htons(block_number); // pareil pour le numero de block
+    memcpy(buffer, &opn, 2);
+    memcpy(buffer + 2, &bn, 2);
+    memcpy(buffer + 4, data, data_len);
+    return (int)(4 + data_len);
+}
+int build_ack(unsigned char *buffer, size_t buffer_size, uint16_t block_number)
+{
+    if (buffer_size < 4)
+        return -1;
+    uint16_t opn = htons(OPCODE_ACK);
+    uint16_t bn = htons(block_number);
+    memcpy(buffer, &opn, 2);
+    memcpy(buffer + 2, &bn, 2);
+    return 4;
+}
+
+int build_error(uint8_t *buffer, size_t buffer_size, uint16_t error_code, const char *error_msg)
+{
+    size_t msg_len = strlen(error_msg);
+    size_t need = 2 + 2 + msg_len + 1; // opcode + errorcode + msg + \0
+    if (need > buffer_size)
+        return -1;
+
+    uint16_t opn = htons(OPCODE_ERROR);
+    uint16_t cn = htons(error_code);
+    memcpy(buffer, &opn, 2);
+    memcpy(buffer + 2, &cn, 2);
+    memcpy(buffer + 4, error_msg, msg_len);
+    buffer[4 + msg_len] = 0;
+    return (int)need;
+}
+
+/* --------------- Parsers --------------- */
+
+int parse_opcode(const uint8_t *buffer, size_t buffer_size, uint16_t *opcode)
+{
+    if (buffer_size < 2)
+        return -1;
+    uint16_t x;
+    memcpy(&x, buffer, 2);
+    *opcode = ntohs(x);
+    return 0;
+}
+
+int parse_block(const uint8_t *buffer, size_t buffer_size, uint16_t *block_number)
+{
+    if (buffer_size < 4)
+        return -1;
+    uint16_t x;
+    memcpy(&x, buffer + 2, 2);
+    *block_number = ntohs(x);
+    return 0;
+}
+
+// RRQ/WRQ: [op(2)] [filename]\0 [mode]\0
+int parse_rrq_wrq(const uint8_t *buffer, size_t buffer_size,
+                  char *filename, size_t fmax,
+                  char *mode, size_t mmax)
+{
+    if (buffer_size < 4)
+        return -1;
+    size_t i = 2;
+
+    size_t f = 0;
+    while (i < buffer_size && buffer[i] != 0)
+    {
+        if (f + 1 >= fmax)
+            return -1;
+        filename[f++] = (char)buffer[i++];
+    }
+    if (i >= buffer_size || buffer[i] != 0)
+        return -1;
+    filename[f] = 0;
+    i++;
+
+    size_t m = 0;
+    while (i < buffer_size && buffer[i] != 0)
+    {
+        if (m + 1 >= mmax)
+            return -1;
+        mode[m++] = (char)buffer[i++];
+    }
+    if (i >= buffer_size || buffer[i] != 0)
+        return -1;
+    mode[m] = 0;
+
+    return 0;
 }

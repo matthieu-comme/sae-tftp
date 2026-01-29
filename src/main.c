@@ -17,27 +17,33 @@
 
 #include "client.h"
 #include "server.h"
+#include "tftp_utils.h"
 
 #define DEFAULT_TFTP_PORT 69
 
-static void print_usage(const char *prog) {
+static void print_usage(const char *prog)
+{
     printf("Usage:\n");
     printf("  %s client get <server_ip> <remote_file> <local_file>\n", prog);
     printf("  %s client put <server_ip> <local_file> <remote_file>\n", prog);
     printf("  %s server <root_dir>\n", prog);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
 
-    if (argc < 2) {
+    if (argc < 2)
+    {
         print_usage(argv[0]);
         return 1;
     }
 
     /* ===================== MODE CLIENT ===================== */
-    if (strcmp(argv[1], "client") == 0) {
+    if (strcmp(argv[1], "client") == 0)
+    {
 
-        if (argc < 6) {
+        if (argc < 6)
+        {
             print_usage(argv[0]);
             return 1;
         }
@@ -45,28 +51,28 @@ int main(int argc, char **argv) {
         const char *cmd = argv[2];
         const char *server_ip = argv[3];
 
-        if (strcmp(cmd, "get") == 0) {
+        if (strcmp(cmd, "get") == 0)
+        {
             const char *remote_file = argv[4];
-            const char *local_file  = argv[5];
+            const char *local_file = argv[5];
 
             return tftp_client_get(
                 server_ip,
                 DEFAULT_TFTP_PORT,
                 remote_file,
-                local_file
-            );
+                local_file);
         }
 
-        if (strcmp(cmd, "put") == 0) {
-            const char *local_file  = argv[4];
+        if (strcmp(cmd, "put") == 0)
+        {
+            const char *local_file = argv[4];
             const char *remote_file = argv[5];
 
             return tftp_client_put(
                 server_ip,
                 DEFAULT_TFTP_PORT,
                 local_file,
-                remote_file
-            );
+                remote_file);
         }
 
         printf("Unknown client command: %s\n", cmd);
@@ -75,7 +81,8 @@ int main(int argc, char **argv) {
     }
 
     /* ===================== MODE SERVEUR ===================== */
-    if (strcmp(argv[1], "server") == 0) {
+    if (strcmp(argv[1], "server") == 0)
+    {
 
         const char *root_dir = ".";
         if (argc >= 3)
