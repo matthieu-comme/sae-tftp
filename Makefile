@@ -2,7 +2,8 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -g -Iinclude
 
-NAME = tftp
+CLIENT_NAME = tftp_client
+SERVER_NAME = tftp_server
 TEST_NAME = run_tests
 
 # dossiers
@@ -11,25 +12,34 @@ OBJ_DIR = obj
 INC_DIR = include
 TEST_DIR = tests
 
-SRCS = $(SRC_DIR)/main.c \
-       $(SRC_DIR)/client.c \
-       $(SRC_DIR)/server.c \
-       $(SRC_DIR)/sockets.c \
-       $(SRC_DIR)/tftp_utils.c
+# sources communes (pas de main ici)
+COMMON_SRCS = $(SRC_DIR)/sockets.c \
+              $(SRC_DIR)/tftp_utils.c
 
-OBJS = $(SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
+# sources client/serveur (chacun contient SON main)
+CLIENT_SRCS = $(SRC_DIR)/client.c
+SERVER_SRCS = $(SRC_DIR)/server.c
 
-all: $(NAME)
+COMMON_OBJS = $(COMMON_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
+CLIENT_OBJS = $(CLIENT_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
+SERVER_OBJS = $(SERVER_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 
-$(NAME): $(OBJS)
-	@echo "Création de l'exécutable $(NAME)..."
-	$(CC) $(CFLAGS) $(OBJS) -o $(NAME)
-	@echo "Terminé !"
+all: $(CLIENT_NAME) $(SERVER_NAME)
 
+# ---------- client ----------
+$(CLIENT_NAME): $(COMMON_OBJS) $(CLIENT_OBJS)
+	$(CC) $(CFLAGS) $^ -o $@
+
+# ---------- serveur ----------
+$(SERVER_NAME): $(COMMON_OBJS) $(SERVER_OBJS)
+	$(CC) $(CFLAGS) $^ -o $@
+
+# ---------- compilation objets ----------
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# ---------- tests ----------
 tests: $(OBJ_DIR)/tftp_utils.o
 	@echo "Compilation des tests..."
 	$(CC) $(CFLAGS) $(TEST_DIR)/test_unit.c $(OBJ_DIR)/tftp_utils.o -o $(TEST_NAME)
@@ -42,7 +52,7 @@ clean:
 
 fclean: clean
 	@echo "Suppression des exécutables..."
-	rm -f $(NAME) $(TEST_NAME)
+	rm -f $(CLIENT_NAME) $(SERVER_NAME) $(TEST_NAME)
 
 re: fclean all
 

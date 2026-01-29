@@ -1,6 +1,6 @@
 # Le serveur doit être lancé avec les droits admin pour écouter sur le port 69
 
-sudo ./tftp server .
+sudo ./tftp_server .
 
 # Usage : ./tftp client get <ip_serveur> <fichier_distant> <fichier_local>
 
