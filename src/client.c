@@ -5,6 +5,8 @@
 
 #include "client.h"
 #include "sockets.h"
+#include <stdio.h>
+#include <string.h>
 
 /* ------------------- Builders / Parsers ------------------- */
 
@@ -344,4 +346,34 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
     fclose(in);
     close(sock);
     return 0;
+}
+
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr,
+            "Usage:\n"
+            "  %s get <server_ip> <remote_file> <local_file>\n"
+            "  %s put <server_ip> <local_file> <remote_file>\n",
+            argv[0], argv[0]);
+        return 1;
+    }
+
+    if (strcmp(argv[1], "get") == 0) {
+        if (argc != 5) {
+            fprintf(stderr, "Invalid arguments for GET\n");
+            return 1;
+        }
+        return tftp_client_get(argv[2], 69, argv[3], argv[4]);
+    }
+
+    if (strcmp(argv[1], "put") == 0) {
+        if (argc != 5) {
+            fprintf(stderr, "Invalid arguments for PUT\n");
+            return 1;
+        }
+        return tftp_client_put(argv[2], 69, argv[3], argv[4]);
+    }
+
+    fprintf(stderr, "Unknown command: %s\n", argv[1]);
+    return 1;
 }

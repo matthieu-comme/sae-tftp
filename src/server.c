@@ -11,7 +11,7 @@
 #include "server.h"
 #include "sockets.h"
 #include "tftp_utils.h"
-
+#include <stdio.h>
 /* ---------------------------- RRQ session ---------------------------- */
 static int handle_rrq(int sess_sock, const struct sockaddr_in *client,
                       const char *root_dir, const char *filename)
@@ -252,7 +252,6 @@ int tftp_server_run(uint16_t server_port, const char *root_dir)
             continue;
         }
 
-        printf("DEBUG: Reçu paquet de %ld octets de %s\n", n, inet_ntoa(client.sin_addr));
         display_packet((char *)buf, n);
 
         uint16_t op;
@@ -326,4 +325,13 @@ int tftp_server_run(uint16_t server_port, const char *root_dir)
     // never reached
     close(sock69);
     return 0;
+}
+
+int main(int argc, char **argv) {
+    const char *root_dir = ".";
+
+    if (argc >= 2)
+        root_dir = argv[1];
+
+    return tftp_server_run(69, root_dir);
 }
