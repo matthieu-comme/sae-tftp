@@ -333,5 +333,5 @@ int main(int argc, char **argv) {
     if (argc >= 2)
         root_dir = argv[1];
 
-    return tftp_server_run(69, root_dir);
+    return tftp_server_run(SERVER_PORT, root_dir);
 }

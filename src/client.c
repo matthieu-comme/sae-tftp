@@ -349,7 +349,7 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
 }
 
 int main(int argc, char **argv) {
-    if (argc < 2) {
+    if (argc < 5) {
         fprintf(stderr,
             "Usage:\n"
             "  %s get <server_ip> <remote_file> <local_file>\n"
@@ -359,19 +359,11 @@ int main(int argc, char **argv) {
     }
 
     if (strcmp(argv[1], "get") == 0) {
-        if (argc != 5) {
-            fprintf(stderr, "Invalid arguments for GET\n");
-            return 1;
-        }
-        return tftp_client_get(argv[2], 69, argv[3], argv[4]);
+        return tftp_client_get(argv[2], SERVER_PORT, argv[3], argv[4]);
     }
 
     if (strcmp(argv[1], "put") == 0) {
-        if (argc != 5) {
-            fprintf(stderr, "Invalid arguments for PUT\n");
-            return 1;
-        }
-        return tftp_client_put(argv[2], 69, argv[3], argv[4]);
+        return tftp_client_put(argv[2], SERVER_PORT, argv[3], argv[4]);
     }
 
     fprintf(stderr, "Unknown command: %s\n", argv[1]);
