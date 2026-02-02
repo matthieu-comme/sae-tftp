@@ -2,4 +2,5 @@
 test_unit
 obj/
 run_tests
-tftp
+tftp_server
+tftp_client

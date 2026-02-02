@@ -327,11 +327,17 @@ int tftp_server_run(uint16_t server_port, const char *root_dir)
     return 0;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
+    if (argc < 2)
+    {
+        fprintf(stderr, "Usage: %s PORT [root_dir]\n", argv[0]);
+        return 1;
+    }
     const char *root_dir = ".";
 
-    if (argc >= 2)
-        root_dir = argv[1];
+    if (argc >= 3)
+        root_dir = argv[2];
 
-    return tftp_server_run(SERVER_PORT, root_dir);
+    return tftp_server_run(atoi(argv[1]), root_dir);
 }

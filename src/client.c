@@ -165,6 +165,8 @@ int tftp_client_get(const char *server_ip, uint16_t server_port,
 
     fclose(out);
     close(sock);
+    printf("Le fichier a bien été récupéré\n");
+
     return 0;
 }
 
@@ -345,25 +347,30 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
 
     fclose(in);
     close(sock);
+    printf("Le fichier a bien été envoyé\n");
     return 0;
 }
 
-int main(int argc, char **argv) {
-    if (argc < 5) {
+int main(int argc, char **argv)
+{
+    if (argc < 6)
+    {
         fprintf(stderr,
-            "Usage:\n"
-            "  %s get <server_ip> <remote_file> <local_file>\n"
-            "  %s put <server_ip> <local_file> <remote_file>\n",
-            argv[0], argv[0]);
+                "Usage:\n"
+                "  %s get <server_ip> <port> <remote_file> <local_file>\n"
+                "  %s put <server_ip> <port> <local_file> <remote_file>\n",
+                argv[0], argv[0]);
         return 1;
     }
 
-    if (strcmp(argv[1], "get") == 0) {
-        return tftp_client_get(argv[2], SERVER_PORT, argv[3], argv[4]);
+    if (strcmp(argv[1], "get") == 0)
+    {
+        return tftp_client_get(argv[2], atoi(argv[3]), argv[4], argv[5]);
     }
 
-    if (strcmp(argv[1], "put") == 0) {
-        return tftp_client_put(argv[2], SERVER_PORT, argv[3], argv[4]);
+    if (strcmp(argv[1], "put") == 0)
+    {
+        return tftp_client_put(argv[2], atoi(argv[3]), argv[4], argv[5]);
     }
 
     fprintf(stderr, "Unknown command: %s\n", argv[1]);

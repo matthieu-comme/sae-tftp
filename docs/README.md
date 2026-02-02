@@ -2,17 +2,17 @@
 
 sudo ./tftp_server .
 
-# Usage : ./tftp client get <ip_serveur> <fichier_distant> <fichier_local>
+# Usage : ./tftp client get <ip_serveur> <PORT> <fichier_distant> <fichier_local>
 
 # télécharger le fichier file.txt et le nommer out.txt
 
-./tftp client get 127.0.0.1 file.txt out.txt
+./tftp_client get 127.0.0.1 69 file.txt out.txt
 
-# Usage : ./tftp client put <ip_serveur> <fichier_local> <fichier_distant>
+# Usage : ./tftp client put <ip_serveur> <PORT> <fichier_local> <fichier_distant>
 
 # upload le fichier document.txt sous le nom backup.txt
 
-./tftp client put 127.0.0.1 document.txt backup.txt
+./tftp client put 127.0.0.1 69 document.txt backup.txt
 
 # compiler
 
