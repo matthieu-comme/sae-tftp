@@ -197,17 +197,44 @@ static int handle_wrq(int sess_sock, const struct sockaddr_in *client,
             expected++;
 
             if (data_len < DATA_SIZE)
-                break; // dernier bloc
+            {
+                // ACK final envoyé, on attend un peu pour voir si le client retransmet.
+                // si timeout : OK
+                // Si réception DATA : l'ACK a été perdu, on le renvoie.
+                int wait_loops = 0;
+                while (wait_loops < 3)
+                {
+                    struct sockaddr_in wait_src;
+                    ssize_t dn = recvfrom_timeout(sess_sock, rx, sizeof(rx), &wait_src, TIMEOUT_MS);
+
+                    if (dn == 0)
+                        break; // timeout = OK
+                    if (dn < 0)
+                        break; // erreur socket
+
+                    if (!addr_equal(&wait_src, client))
+                        continue;
+
+                    uint16_t dop, dblk;
+                    if (parse_opcode(rx, (size_t)dn, &dop) == 0 && dop == OPCODE_DATA)
+                    {
+                        if (parse_block(rx, (size_t)dn, &dblk) == 0 && dblk == block)
+                        {
+                            // le client a renvoyé le dernier DATA, on renvoie le dernier ACK
+                            sendto(sess_sock, last_sent, last_len, 0, (struct sockaddr *)client, sizeof(*client));
+                            wait_loops++;
+                        }
+                    }
+                }
+                break;
+            }
         }
-        else if (block == (uint16_t)(expected - 1))
+        else if (block == (uint16_t)(expected - 1)) // doublon, on renvoie l'ack correspondant
         {
-            // doublon => re-ACK sans réécrire
             int ack_len = build_ack(last_sent, sizeof(last_sent), block);
             sendto(sess_sock, last_sent, ack_len, 0, (struct sockaddr *)client, sizeof(*client));
-            last_len = (size_t)ack_len;
         }
     }
-
     fclose(out);
     return 0;
 }
