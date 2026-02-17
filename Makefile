@@ -5,6 +5,7 @@ CFLAGS = -Wall -Wextra -g -Iinclude
 CLIENT_NAME = tftp_client
 SERVER_NAME = tftp_server
 TEST_NAME = run_tests
+SERVER_MONO_NAME = tftp_server_mono
 
 # dossiers
 SRC_DIR = src
@@ -19,12 +20,14 @@ COMMON_SRCS = $(SRC_DIR)/sockets.c \
 # sources client/serveur (chacun contient SON main)
 CLIENT_SRCS = $(SRC_DIR)/client.c
 SERVER_SRCS = $(SRC_DIR)/server.c
+SERVER_MONO_SRCS = $(SRC_DIR)/server_mono.c 
 
 COMMON_OBJS = $(COMMON_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 CLIENT_OBJS = $(CLIENT_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 SERVER_OBJS = $(SERVER_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
+SERVER_MONO_OBJS = $(SERVER_MONO_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 
-all: $(CLIENT_NAME) $(SERVER_NAME)
+all: $(CLIENT_NAME) $(SERVER_NAME) $(SERVER_MONO_NAME)
 
 # ---------- client ----------
 $(CLIENT_NAME): $(COMMON_OBJS) $(CLIENT_OBJS)
@@ -32,6 +35,10 @@ $(CLIENT_NAME): $(COMMON_OBJS) $(CLIENT_OBJS)
 
 # ---------- serveur ----------
 $(SERVER_NAME): $(COMMON_OBJS) $(SERVER_OBJS)
+	$(CC) $(CFLAGS) $^ -o $@
+
+# ---------- serveur monothread multi-clients ----------
+$(SERVER_MONO_NAME): $(COMMON_OBJS) $(SERVER_MONO_OBJS)
 	$(CC) $(CFLAGS) $^ -o $@
 
 # ---------- compilation objets ----------
@@ -52,7 +59,7 @@ clean:
 
 fclean: clean
 	@echo "Suppression des exécutables..."
-	rm -f $(CLIENT_NAME) $(SERVER_NAME) $(TEST_NAME)
+	rm -f $(CLIENT_NAME) $(SERVER_NAME) $(SERVER_MONO_NAME) $(TEST_NAME)
 
 re: fclean all
 

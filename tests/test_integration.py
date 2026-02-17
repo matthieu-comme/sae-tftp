@@ -133,6 +133,24 @@ def run_test():
         
         print(" -> OK (Accès bloqué ou fichier non trouvé)")
 
+
+        # TEST 6: Wrap Around Block Numbers (> 33MB)
+        # 65536 blocs * 512 octets = 33 554 432 octets
+        print("[TEST 6] Heavy Load: Block number wrap-around (>34MB)")
+        src = f"{ROOT_SRV}/huge.bin"
+        dst = f"{ROOT_CLI}/huge.bin"
+        
+        # Attention : création fichier un peu longue
+        create_file(src, 50000) # 34MB (approx)
+        
+        start_t = time.time()
+        subprocess.check_call([CLIENT_FILE, "get", SERVER_IP, str(SERVER_PORT), "huge.bin", dst])
+        end_t = time.time()
+        
+        print(f" -> Transfert terminé en {end_t - start_t:.2f}s")
+        if md5(src) != md5(dst): raise Exception("MD5 mismatch sur HUGE file")
+        print(" -> OK")
+
     finally:
         srv_proc.terminate()
         srv_proc.wait()
