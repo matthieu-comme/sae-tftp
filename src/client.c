@@ -213,6 +213,8 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
     sendto(sock, last_sent, wrq_len, 0, (struct sockaddr *)&srv, sizeof(srv));
     last_len = (size_t)wrq_len;
 
+    fprintf(stderr, "[CLIENT DEBUG - %s] WRQ envoyé. Attente de l'ACK(0)...\n", local_file);
+
     struct sockaddr_in tid;
     memset(&tid, 0, sizeof(tid));
     int tid_known = 0;
@@ -233,6 +235,7 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
 
         if (n == 0)
         {
+            fprintf(stderr, "[CLIENT DEBUG - %s] TIMEOUT ! Retransmission du WRQ (Essai %d)\n", local_file, retries + 1);
             if (++retries > MAX_RETRIES)
             {
                 fprintf(stderr, "PUT: timeout waiting ACK(0)\n");
@@ -243,6 +246,7 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
             sendto(sock, last_sent, last_len, 0, (struct sockaddr *)&srv, sizeof(srv));
             continue;
         }
+        fprintf(stderr, "[CLIENT DEBUG - %s] Paquet de %zd octets reçu depuis le port %d\n", local_file, n, ntohs(src.sin_port));
 
         if (!tid_known)
         {

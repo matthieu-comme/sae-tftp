@@ -279,7 +279,7 @@ int tftp_server_run(uint16_t server_port, const char *root_dir)
             continue;
         }
 
-        display_packet((char *)buf, n);
+        // display_packet((char *)buf, n);
 
         uint16_t op;
         if (parse_opcode(buf, (size_t)n, &op) < 0)

@@ -7,10 +7,10 @@
 #include <sys/stat.h>
 /*
 # Compilation
-gcc -Wall -Iinclude tests/test_server_mono.c src/tftp_utils.c src/sockets.c -o test_server_runner
+gcc -Wall -Iinclude tests/test_server_mono.c src/tftp_utils.c src/sockets.c -o test_server_mono
 
 # Exécution
-./test_server_runner
+./test_server_mono
 */
 
 // ====================================================================
@@ -174,13 +174,12 @@ void test_step_wrq_normal()
     memcpy(rx_buf + 2, &blk, 2);
     memcpy(rx_buf + 4, "ABCD", 4);
 
-    // --- Action ---
     int res = step_wrq(&ctx, rx_buf, 4 + 4); // 4 header + 4 data
 
-    // --- Assertions ---
     assert(res == 0);
     assert(ctx.block == 2); // On attend maintenant le 2
-    fflush(ctx.fp);         // Force écriture disque pour le test
+
+    // L'écriture a été flushée sur le disque par le fclose interne de step_wrq
     assert(get_file_size("test_wrq.tmp") == 4);
 
     // Vérifier que l'ACK envoyé est pour le bloc 1
@@ -190,10 +189,10 @@ void test_step_wrq_normal()
     assert(ntohs(sent_op) == OPCODE_ACK);
     assert(ntohs(sent_blk) == 1);
 
-    // Vérifier transition STATE_WAITING (car data < 512)
+    // STATE_WAITING (car data < 512)
     assert(ctx.state == STATE_WAITING);
+    assert(ctx.fp == NULL);
 
-    fclose(ctx.fp);
     close(ctx.sock);
     remove("test_wrq.tmp");
     printf("OK\n");

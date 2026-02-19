@@ -2,6 +2,7 @@
 test_unit
 obj/
 run_tests
+tftp_server
 tftp_server_*
 tftp_client
 test_cli_dir

@@ -85,6 +85,12 @@ int step_rrq(ClientContext *ctx, uint8_t *rx_buf, ssize_t rx_len)
         sendto(ctx->sock, ctx->last_packet, len, 0, (struct sockaddr *)&ctx->addr, sizeof(ctx->addr));
         ctx->last_activity = time(NULL); // reset timer
     }
+    else if (ack_block == (uint16_t)(ctx->block - 1))
+    {
+        // ACK précédent (perte du DATA) -> on retransmet
+        sendto(ctx->sock, ctx->last_packet, ctx->last_packet_len, 0, (struct sockaddr *)&ctx->addr, sizeof(ctx->addr));
+        ctx->last_activity = time(NULL);
+    }
 
     return 0;
 }
@@ -110,11 +116,9 @@ int step_wrq(ClientContext *ctx, uint8_t *rx_buf, ssize_t rx_len)
     {
         size_t data_payload_len = rx_len - 4;
         const uint8_t *data_ptr = rx_buf + 4;
-
-        // écriture
+        //  écriture
         if (fwrite(data_ptr, 1, data_payload_len, ctx->fp) != data_payload_len)
         {
-            perror("fwrite");
             return -1;
         }
         // force l'écriture pour éviter les bugs de race condition
@@ -132,7 +136,17 @@ int step_wrq(ClientContext *ctx, uint8_t *rx_buf, ssize_t rx_len)
 
         // si dernier paquet
         if (data_payload_len < DATA_SIZE)
+        {
             ctx->state = STATE_WAITING; // attend un peu avant de fermer
+
+            // pas besoin du fichier pour renvoyer l'ACK final
+            if (ctx->fp)
+            {
+                fflush(ctx->fp);
+                fclose(ctx->fp);
+                ctx->fp = NULL;
+            }
+        }
     }
     // bloc précédent -> doublon
     else if (data_block == (uint16_t)(ctx->block - 1))
@@ -151,14 +165,15 @@ void process_client_packet(ClientContext *ctx)
     socklen_t sl = sizeof(src);
 
     ssize_t n = recvfrom(ctx->sock, buf, sizeof(buf), 0, (struct sockaddr *)&src, &sl);
-
     if (n <= 0) // erreur ou vide
         return;
 
     // verif TID
     if (src.sin_addr.s_addr != ctx->addr.sin_addr.s_addr ||
         src.sin_port != ctx->addr.sin_port)
+    {
         return;
+    }
 
     // aiguillage
     switch (ctx->state)
@@ -187,7 +202,7 @@ ClientContext *client_list = NULL;
 
 ClientContext *create_client(struct sockaddr_in client_addr)
 {
-    ClientContext *new_client = (ClientContext *)malloc(sizeof(ClientContext));
+    ClientContext *new_client = (ClientContext *)calloc(1, sizeof(ClientContext));
     if (!new_client)
     {
         perror("malloc");
@@ -222,8 +237,8 @@ ClientContext *create_client(struct sockaddr_in client_addr)
     new_client->addr_len = sizeof(client_addr);
 
     // insertion en tête de liste
-    new_client->next = client_list;
-    client_list = new_client;
+    // new_client->next = client_list;
+    // client_list = new_client;
 
     return new_client;
 }
@@ -254,6 +269,45 @@ void remove_client(ClientContext *target)
     free(target);
 }
 
+// cherche si un client existe déjà avec cette adresse (IP + Port)
+ClientContext *find_client(struct sockaddr_in *addr)
+{
+    ClientContext *curr = client_list;
+    while (curr != NULL)
+    {
+        if (curr->addr.sin_addr.s_addr == addr->sin_addr.s_addr && curr->addr.sin_port == addr->sin_port)
+            return curr;
+
+        curr = curr->next;
+    }
+    return NULL;
+}
+
+// Retourne 1 si l'accès est refusé (conflit), 0 si autorisé
+int is_access_denied(const char *filename, uint16_t requested_op, ClientContext *exclude)
+{
+    ClientContext *curr = client_list;
+    while (curr != NULL)
+    {
+        if (curr != exclude && curr->state != STATE_FINISHED && curr->state != STATE_WAITING && strcmp(curr->filename, filename) == 0)
+        {
+            // écriture refusée si y a deja qqn sur le fichier
+            if (requested_op == OPCODE_WRQ)
+            {
+                return 1;
+            }
+
+            // lecture refusée si qqn écrit sur le fichier
+            if (requested_op == OPCODE_RRQ && curr->state == STATE_WRQ)
+            {
+                return 1;
+            }
+        }
+        curr = curr->next;
+    }
+    return 0; // Aucun conflit trouvé, accès autorisé
+}
+
 void handle_new_connection(int main_sock, const char *root_dir)
 {
     struct sockaddr_in client_addr;
@@ -266,14 +320,67 @@ void handle_new_connection(int main_sock, const char *root_dir)
     if (n <= 0)
         return;
 
+    // si le client existe déjà, c'est qu'il a perdu notre paquet initial donc on le renvoie
+    ClientContext *exist = find_client(&client_addr);
+    if (exist)
+    {
+        if (exist->state == STATE_FINISHED || exist->state == STATE_WAITING)
+        {
+            char new_filename[512], new_mode[64];
+
+            // meme fichier ?
+            if (parse_rrq_wrq(buf, n, new_filename, sizeof(new_filename), new_mode, sizeof(new_mode)) == 0)
+            {
+                if (strcmp(new_filename, exist->filename) == 0)
+                {
+                    // vieux doublon -> ACK
+                    sendto(exist->sock, exist->last_packet, exist->last_packet_len, 0, (struct sockaddr *)&exist->addr, exist->addr_len);
+                    exist->last_activity = time(NULL);
+                    return;
+                }
+            }
+
+            if (exist->fp)
+            {
+                fclose(exist->fp);
+                exist->fp = NULL;
+            }
+            remove_client(exist);
+            exist = NULL;
+        }
+        else
+        {
+            // client actif, donc retransmission
+            printf("Retransmission détectée pour [%s:%d]\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+            sendto(exist->sock, exist->last_packet, exist->last_packet_len, 0, (struct sockaddr *)&exist->addr, exist->addr_len);
+            exist->last_activity = time(NULL);
+            return;
+        }
+    }
+
     // parsing
     uint16_t op;
     if (parse_opcode(buf, n, &op) < 0)
+    {
+        fprintf(stderr, "ERROR: Opcode parsing\n");
         return;
+    }
 
     char filename[512], mode[64];
     if (parse_rrq_wrq(buf, n, filename, sizeof(filename), mode, sizeof(mode)) < 0)
+    {
+        fprintf(stderr, "ERROR: RRQ/WRQ parsing pour opcode %d\n", op);
         return;
+    }
+
+    if (!safe_name(filename))
+    {
+        printf("Refus : Nom de fichier invalide ou dangereux : %s\n", filename);
+        uint8_t err[64];
+        int len = build_error(err, sizeof(err), 2, "Access denied / Invalid path");
+        sendto(main_sock, err, len, 0, (struct sockaddr *)&client_addr, addr_len);
+        return;
+    }
 
     ClientContext *new_c = create_client(client_addr);
     if (!new_c)
@@ -294,14 +401,25 @@ void handle_new_connection(int main_sock, const char *root_dir)
     // traitement RRQ vs WRQ
     if (op == OPCODE_RRQ)
     {
+        if (is_access_denied(filename, OPCODE_RRQ, new_c))
+        {
+            printf("Refus RRQ : Fichier '%s' en cours de modification (PUT).\n", filename);
+            uint8_t err[64];
+            int len = build_error(err, sizeof(err), 2, "File is currently locked for writing");
+            sendto(main_sock, err, len, 0, (struct sockaddr *)&client_addr, addr_len);
+            remove_client(new_c);
+            return;
+        }
         new_c->state = STATE_RRQ;
         new_c->fp = fopen(path, "rb");
-        if (!new_c->fp) // fichier non trouvé -> Erreur 1
+        if (!new_c->fp) // fichier non trouvé -> erreur 1
         {
             uint8_t err[64];
             int len = build_error(err, sizeof(err), 1, "File not found");
             sendto(new_c->sock, err, len, 0, (struct sockaddr *)&new_c->addr, new_c->addr_len);
             new_c->state = STATE_FINISHED;
+
+            remove_client(new_c);
             return;
         }
 
@@ -314,27 +432,44 @@ void handle_new_connection(int main_sock, const char *root_dir)
         new_c->last_packet_len = len;
 
         sendto(new_c->sock, new_c->last_packet, len, 0, (struct sockaddr *)&new_c->addr, new_c->addr_len);
+
+        new_c->next = client_list;
+        client_list = new_c;
     }
     else if (op == OPCODE_WRQ)
     {
+        if (is_access_denied(filename, OPCODE_WRQ, new_c))
+        {
+            printf("Refus WRQ : Fichier '%s' en cours d'utilisation (GET ou PUT).\n", filename);
+            uint8_t err[64];
+            int len = build_error(err, sizeof(err), 2, "File is busy");
+            sendto(main_sock, err, len, 0, (struct sockaddr *)&client_addr, addr_len);
+            remove_client(new_c);
+            return;
+        }
+
         new_c->state = STATE_WRQ;
         new_c->fp = fopen(path, "wb");
-        if (!new_c->fp) // accès refusé -> Erreur 2
+        if (!new_c->fp) // accès refusé -> erreur 2
         {
             uint8_t err[64];
             int len = build_error(err, sizeof(err), 2, "Access denied");
             sendto(new_c->sock, err, len, 0, (struct sockaddr *)&new_c->addr, new_c->addr_len);
             new_c->state = STATE_FINISHED;
+            remove_client(new_c);
             return;
         }
 
         // envoie ACK 0
-        new_c->block = 0; // On attend le bloc 1, mais on ack le 0
+        new_c->block = 0; // on attend le bloc 1, mais on ack le 0
         int len = build_ack(new_c->last_packet, sizeof(new_c->last_packet), 0);
         new_c->last_packet_len = len;
 
         sendto(new_c->sock, new_c->last_packet, len, 0, (struct sockaddr *)&new_c->addr, new_c->addr_len);
-        new_c->block = 1; // Maintenant on attend le bloc 1
+        new_c->block = 1;
+
+        new_c->next = client_list;
+        client_list = new_c;
     }
 }
 
@@ -342,6 +477,7 @@ void handle_new_connection(int main_sock, const char *root_dir)
 
 int main(int argc, char **argv)
 {
+    // setbuf(stdout, NULL);
     if (argc < 2)
     {
         fprintf(stderr, "Usage: %s PORT [root_dir]\n", argv[0]);
@@ -383,28 +519,24 @@ int main(int argc, char **argv)
 
     while (1)
     {
-        // init l'ensemble des descripteurs
+        // préparation du select
         FD_ZERO(&readfds);
-        FD_SET(main_sock, &readfds); // on surveille le socket principal
+        FD_SET(main_sock, &readfds);
         max_fd = main_sock;
 
-        // on surveille les clients existants
         ClientContext *curr = client_list;
         while (curr != NULL)
         {
             FD_SET(curr->sock, &readfds);
             if (curr->sock > max_fd)
-            {
                 max_fd = curr->sock;
-            }
             curr = curr->next;
         }
 
-        // définit 1 sec de timeout
         timeout.tv_sec = 1;
         timeout.tv_usec = 0;
 
-        // le programme attend ici jusqu'à qu'un truc se passe
+        // attente d'evenement
         int activity = select(max_fd + 1, &readfds, NULL, NULL, &timeout);
 
         if (activity < 0)
@@ -413,26 +545,82 @@ int main(int argc, char **argv)
             continue;
         }
 
-        // verifier le socket principal (nouveaux clients)
+        // Traitement des paquets reçus
+
+        // si nouveaux clients
         if (FD_ISSET(main_sock, &readfds))
         {
             handle_new_connection(main_sock, root_dir);
         }
 
-        // F. Vérifier les sockets des clients existants (Transferts en cours)
+        // clients existants
         curr = client_list;
         while (curr != NULL)
         {
             if (FD_ISSET(curr->sock, &readfds))
-            {
-                // TODO: Appeler process_client_packet(curr)
-                printf("Activité détectée sur le client socket %d\n", curr->sock);
+                process_client_packet(curr);
 
-                // Juste pour vider le buffer pour ce test, sinon select va boucler
-                uint8_t trash[1024];
-                recv(curr->sock, trash, sizeof(trash), 0);
-            }
             curr = curr->next;
+        }
+
+        // parcours des clients pour gérer les timeouts et supprimer les finis.
+        curr = client_list;
+        ClientContext *next_node = NULL;
+
+        while (curr != NULL)
+        {
+            next_node = curr->next;
+
+            time_t now = time(NULL);
+
+            // si client fini
+            if (curr->state == STATE_FINISHED)
+            {
+                //  garde le client x secondes pour absorber les vieux WRQ dans le buffer
+                if (difftime(now, curr->last_activity) >= 15.0)
+                {
+                    printf("Client [%s:%d] terminé. Nettoyage.\n",
+                           inet_ntoa(curr->addr.sin_addr), ntohs(curr->addr.sin_port));
+                    if (curr->fp)
+                        fclose(curr->fp); // Sécurité (normalement déjà fermé)
+                    remove_client(curr);
+                }
+            }
+            else if (curr->state == STATE_WAITING)
+            {
+                // fini si attente depuis 1 sec
+                if (difftime(now, curr->last_activity) >= 1.0)
+                {
+                    curr->state = STATE_FINISHED;
+                    curr->last_activity = now;
+                }
+            }
+
+            // si timeout
+            else if (difftime(now, curr->last_activity) >= 2.0) // timeout 2 secondes arbitraire
+            {
+                if (curr->retries >= MAX_RETRIES)
+                {
+                    printf("Client [%s:%d] TIMEOUT (Max retries). Suppression.\n",
+                           inet_ntoa(curr->addr.sin_addr), ntohs(curr->addr.sin_port));
+                    if (curr->fp)
+                        fclose(curr->fp);
+                    remove_client(curr);
+                }
+                else
+                {
+                    printf("Client [%s:%d] Timeout... Retransmission bloc %d\n",
+                           inet_ntoa(curr->addr.sin_addr), ntohs(curr->addr.sin_port), curr->block);
+
+                    // renvoie le dernier paquet stocké
+                    sendto(curr->sock, curr->last_packet, curr->last_packet_len, 0,
+                           (struct sockaddr *)&curr->addr, curr->addr_len);
+
+                    curr->last_activity = now; // reset timer
+                    curr->retries++;
+                }
+            }
+            curr = next_node;
         }
     }
 
