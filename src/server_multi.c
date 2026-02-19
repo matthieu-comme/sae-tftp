@@ -40,6 +40,10 @@ typedef struct file_lock {
 static file_lock_t *lock_list = NULL;
 static pthread_mutex_t lock_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+static volatile int active_threads = 0; // compteur de threads de transfert actifs
+static pthread_mutex_t active_threads_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t thread_done_cond = PTHREAD_COND_INITIALIZER; // signal quand dernier thread finit
+
 static volatile sig_atomic_t g_stop = 0; // variable pour indiquer au serveur de s'arrêter
 static void on_sigint(int sig) { // pour arrêter le serveur avec (Ctrl+C) si besoin 
     (void)sig;
@@ -207,8 +211,11 @@ static int handle_rrq(int sess_sock, const struct sockaddr_in *client,
                 }
                 // retransmission du dernier DATA(block)
                 if (sendto_checked(sess_sock, last_sent, last_len, client) < 0) {
-                    continue;
+                    fclose(in);
+                    pthread_rwlock_unlock(rwlock);
+                    return -1;
                 }
+                continue; // on continue à attendre l'ACK
             }
 
             // TID check: on n'accepte que l'IP:port du client qui a initié
@@ -312,8 +319,11 @@ static int handle_wrq(int sess_sock, const struct sockaddr_in *client,
             }
             // retransmission du dernier ACK (ACK0 ou ACK(expected-1))
             if (sendto_checked(sess_sock, last_sent, last_len, client) < 0) {
-                continue;
+                fclose(out);
+                pthread_rwlock_unlock(rwlock);
+                return -1;
             }
+            continue; // IMPORTANT: continuer la boucle sans traiter rx invalide
         }
 
         if (!addr_equal(&src, client))
@@ -405,6 +415,11 @@ static int handle_wrq(int sess_sock, const struct sockaddr_in *client,
 static void *transfer_thread(void *arg) {
     transfer_ctx_t *ctx = (transfer_ctx_t *)arg;
 
+    // Incrémenter le compteur de threads actifs
+    pthread_mutex_lock(&active_threads_mutex);
+    active_threads++;
+    pthread_mutex_unlock(&active_threads_mutex);
+
     if (ctx->op == OPCODE_RRQ) {
         handle_rrq(ctx->sess_sock, &ctx->client, ctx->root_dir, ctx->filename);
     } else {
@@ -413,6 +428,15 @@ static void *transfer_thread(void *arg) {
 
     close(ctx->sess_sock);
     free(ctx);
+
+    // Décrémenter le compteur de threads actifs
+    pthread_mutex_lock(&active_threads_mutex);
+    active_threads--;
+    if (active_threads == 0) {
+        pthread_cond_signal(&thread_done_cond); // Signal quand dernier thread finit
+    }
+    pthread_mutex_unlock(&active_threads_mutex);
+
     return NULL;
 }
 
@@ -549,6 +573,14 @@ int tftp_server_run_multithread(uint16_t server_port, const char *root_dir) {
     }
 
     close(sock69);
+    
+    // Attendre que tous les threads finissent (condition variable)
+    pthread_mutex_lock(&active_threads_mutex);
+    while (active_threads > 0) {
+        pthread_cond_wait(&thread_done_cond, &active_threads_mutex);
+    }
+    pthread_mutex_unlock(&active_threads_mutex);
+    
     free_all_file_locks();
     return 0;
 }
