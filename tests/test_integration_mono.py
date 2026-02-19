@@ -141,6 +141,77 @@ def test_error_disk_full_simulated():
         raise Exception("Le serveur a réussi à écrire dans un répertoire protégé !")
 
 
+def test_error_not_defined():
+    print("[TEST ERROR 0] Not Defined (Custom message)")
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(2)
+
+    # Chemin dangereux pour forcer safe_name() à échouer
+    rrq = b"\x00\x01" + b"../etc/passwd\x00" + b"octet\x00"
+    sock.sendto(rrq, (SERVER_IP, SERVER_PORT))
+
+    try:
+        data, _ = sock.recvfrom(516)
+        opcode = int.from_bytes(data[:2], "big")
+        err_code = int.from_bytes(data[2:4], "big")
+        if opcode == 5 and err_code == 0:
+            print(" -> OK (Erreur 0 reçue)")
+        else:
+            raise Exception(f"Attendu Erreur 0, reçu Opcode {opcode} Code {err_code}")
+    except socket.timeout:
+        raise Exception("Le serveur n'a pas répondu pour le chemin invalide")
+    finally:
+        sock.close()
+
+
+def test_error_file_not_found_strict():
+    print("[TEST ERROR 1] File Not Found (Strict Check)")
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(2)
+
+    rrq = b"\x00\x01" + b"totally_fake_file.bin\x00" + b"octet\x00"
+    sock.sendto(rrq, (SERVER_IP, SERVER_PORT))
+
+    try:
+        data, _ = sock.recvfrom(516)
+        opcode = int.from_bytes(data[:2], "big")
+        err_code = int.from_bytes(data[2:4], "big")
+        if opcode == 5 and err_code == 1:
+            print(" -> OK (Erreur 1 reçue)")
+        else:
+            raise Exception(f"Attendu Erreur 1, reçu Opcode {opcode} Code {err_code}")
+    except socket.timeout:
+        raise Exception("Le serveur n'a pas répondu pour le fichier inexistant")
+    finally:
+        sock.close()
+
+
+def test_error_file_exists():
+    print("[TEST ERROR 6] File Already Exists")
+    path = f"{ROOT_SRV}/already_here.bin"
+    create_file(path, 1)  # Création préalable
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(2)
+
+    # Tentative d'écrasement via un WRQ
+    wrq = b"\x00\x02" + b"already_here.bin\x00" + b"octet\x00"
+    sock.sendto(wrq, (SERVER_IP, SERVER_PORT))
+
+    try:
+        data, _ = sock.recvfrom(516)
+        opcode = int.from_bytes(data[:2], "big")
+        err_code = int.from_bytes(data[2:4], "big")
+        if opcode == 5 and err_code == 6:
+            print(" -> OK (Erreur 6 reçue)")
+        else:
+            raise Exception(f"Attendu Erreur 6, reçu Opcode {opcode} Code {err_code}")
+    except socket.timeout:
+        raise Exception("Le serveur n'a pas répondu pour le fichier existant")
+    finally:
+        sock.close()
+
+
 # TEST 1: PUT (Upload petit fichier)
 def test_put_small_file():
     print("[TEST 1] PUT small file")
@@ -652,10 +723,13 @@ def run_test():
     time.sleep(1)  # Laisser le temps de bind
 
     try:
-        test_error_illegal_opcode()
-        test_error_unknown_tid()
+        test_error_not_defined()
+        test_error_file_not_found_strict
         test_error_access_violation_read()
         test_error_disk_full_simulated()
+        test_error_illegal_opcode()
+        test_error_unknown_tid()
+        test_error_file_exists()
 
         test_put_small_file()
         test_get_large_file()

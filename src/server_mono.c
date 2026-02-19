@@ -404,7 +404,7 @@ void handle_new_connection(int main_sock, const char *root_dir)
     {
         printf("Refus : Nom de fichier invalide ou dangereux : %s\n", filename);
         uint8_t err[64];
-        int len = build_error(err, sizeof(err), 2, "Access denied / Invalid path");
+        int len = build_error(err, sizeof(err), 0, "Invalid or forbidden path");
         sendto(main_sock, err, len, 0, (struct sockaddr *)&client_addr, addr_len);
         return;
     }
@@ -470,6 +470,18 @@ void handle_new_connection(int main_sock, const char *root_dir)
             printf("Refus WRQ : Fichier '%s' en cours d'utilisation (GET ou PUT).\n", filename);
             uint8_t err[64];
             int len = build_error(err, sizeof(err), 2, "File is busy");
+            sendto(main_sock, err, len, 0, (struct sockaddr *)&client_addr, addr_len);
+            remove_client(new_c);
+            return;
+        }
+
+        FILE *check_exists = fopen(path, "rb");
+        if (check_exists)
+        {
+            fclose(check_exists);
+            printf("Refus WRQ : Le fichier '%s' existe déjà.\n", filename);
+            uint8_t err[64];
+            int len = build_error(err, sizeof(err), 6, "File already exists");
             sendto(main_sock, err, len, 0, (struct sockaddr *)&client_addr, addr_len);
             remove_client(new_c);
             return;
