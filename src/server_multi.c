@@ -426,6 +426,15 @@ int tftp_server_run_multithread(uint16_t server_port, const char *root_dir) {
         return -1;
     }
 
+    // Permettre la réutilisation rapide du port (après un arrêt du serveur)
+    int reuse = 1;
+    if (setsockopt(sock69, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0)
+    {
+        perror("setsockopt SO_REUSEADDR");
+        close(sock69);
+        return -1;
+    }
+
     struct sockaddr_in a;
     memset(&a, 0, sizeof(a));
     a.sin_family = AF_INET;
@@ -447,7 +456,6 @@ int tftp_server_run_multithread(uint16_t server_port, const char *root_dir) {
         // 1) recevoir une requête RRQ/WRQ sur port serveur (souvent 69)
         uint8_t buf[1024];
         struct sockaddr_in client;
-        socklen_t cl = sizeof(client);
 
         ssize_t n = recvfrom_timeout(sock69, buf, sizeof(buf), &client, TIMEOUT_MS);
         if (n < 0)
