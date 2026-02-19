@@ -74,7 +74,9 @@ int step_rrq(ClientContext *ctx, uint8_t *rx_buf, ssize_t rx_len)
 
         if (ferror(ctx->fp))
         {
-            perror("fread");
+            uint8_t err[64];
+            int len = build_error(err, sizeof(err), 2, "Access violation / Read error");
+            sendto(ctx->sock, err, len, 0, (struct sockaddr *)&ctx->addr, ctx->addr_len);
             return -1;
         }
 
@@ -119,6 +121,9 @@ int step_wrq(ClientContext *ctx, uint8_t *rx_buf, ssize_t rx_len)
         //  écriture
         if (fwrite(data_ptr, 1, data_payload_len, ctx->fp) != data_payload_len)
         {
+            uint8_t err[64];
+            int len = build_error(err, sizeof(err), 3, "Disk full or allocation exceeded");
+            sendto(ctx->sock, err, len, 0, (struct sockaddr *)&ctx->addr, ctx->addr_len);
             return -1;
         }
         // force l'écriture pour éviter les bugs de race condition
@@ -172,6 +177,19 @@ void process_client_packet(ClientContext *ctx)
     if (src.sin_addr.s_addr != ctx->addr.sin_addr.s_addr ||
         src.sin_port != ctx->addr.sin_port)
     {
+        uint8_t err[64];
+        int len = build_error(err, sizeof(err), 5, "Unknown transfer ID");
+        sendto(ctx->sock, err, len, 0, (struct sockaddr *)&src, sl); // Envoi à l'intrus
+        return;
+    }
+
+    uint16_t op;
+    if (parse_opcode(buf, n, &op) < 0)
+    {
+        uint8_t err[64];
+        int len = build_error(err, sizeof(err), 4, "Illegal TFTP operation");
+        sendto(ctx->sock, err, len, 0, (struct sockaddr *)&ctx->addr, ctx->addr_len);
+        ctx->state = STATE_FINISHED;
         return;
     }
 
@@ -363,6 +381,15 @@ void handle_new_connection(int main_sock, const char *root_dir)
     if (parse_opcode(buf, n, &op) < 0)
     {
         fprintf(stderr, "ERROR: Opcode parsing\n");
+        return;
+    }
+
+    if (op != OPCODE_RRQ && op != OPCODE_WRQ)
+    {
+        printf("Refus : Opcode initial illégal (%d)\n", op);
+        uint8_t err[64];
+        int len = build_error(err, sizeof(err), 4, "Illegal TFTP operation");
+        sendto(main_sock, err, len, 0, (struct sockaddr *)&client_addr, addr_len);
         return;
     }
 

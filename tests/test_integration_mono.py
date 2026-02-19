@@ -7,6 +7,7 @@ import time
 import os
 import hashlib
 import shutil
+import socket
 
 SERVER_PORT = 9069
 SERVER_IP = "127.0.0.1"
@@ -36,6 +37,108 @@ def md5(fname):
         for chunk in iter(lambda: f.read(4096), b""):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
+
+
+def test_error_illegal_opcode():
+    print("[TEST ERROR 4] Illegal Opcode")
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(2)
+
+    # Paquet malformé : Opcode 99 (inconnu)
+    packet = b"\x00\x63" + b"test.bin\x00" + b"octet\x00"
+    sock.sendto(packet, (SERVER_IP, SERVER_PORT))
+
+    try:
+        data, _ = sock.recvfrom(516)
+        opcode = int.from_bytes(data[:2], "big")
+        err_code = int.from_bytes(data[2:4], "big")
+
+        if opcode == 5 and err_code == 4:
+            print(" -> OK (Erreur 4 reçue)")
+        else:
+            raise Exception(f"Attendu Erreur 4, reçu Opcode {opcode} Code {err_code}")
+    except socket.timeout:
+        raise Exception("Le serveur n'a pas répondu à l'opcode invalide")
+    finally:
+        sock.close()
+
+
+def test_error_unknown_tid():
+    print("[TEST ERROR 5] Unknown TID (Intrusion)")
+
+    # 1. On initialise une session normale (WRQ) avec un premier socket
+    sock_legit = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock_legit.settimeout(2)
+    wrq = b"\x00\x02" + b"ghost.bin\x00" + b"octet\x00"
+    sock_legit.sendto(wrq, (SERVER_IP, SERVER_PORT))
+
+    # On récupère le port de session (TID) choisi par le serveur
+    ack0, tid_addr = sock_legit.recvfrom(516)
+
+    # 2. Un DEUXIÈME socket (l'intrus) essaie d'envoyer un DATA 1 au même TID
+    sock_intruder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock_intruder.settimeout(2)
+    data1 = b"\x00\x03\x00\x01" + b"hello"
+    sock_intruder.sendto(data1, tid_addr)
+
+    try:
+        resp, _ = sock_intruder.recvfrom(516)
+        opcode = int.from_bytes(resp[:2], "big")
+        err_code = int.from_bytes(resp[2:4], "big")
+
+        if opcode == 5 and err_code == 5:
+            print(" -> OK (Erreur 5 envoyée à l'intrus)")
+        else:
+            raise Exception(f"L'intrus aurait dû recevoir Erreur 5, reçu {err_code}")
+    except socket.timeout:
+        raise Exception("Le serveur n'a pas rejeté l'intrus (Timeout)")
+    finally:
+        sock_legit.close()
+        sock_intruder.close()
+
+
+def test_error_access_violation_read():
+    print("[TEST ERROR 2] Access Violation (Read)")
+    path = f"{ROOT_SRV}/secret.bin"
+    create_file(path, 1)
+    os.chmod(path, 0o000)  # On retire tous les droits
+
+    # Le client doit recevoir une erreur 2 lors du GET
+    ret = subprocess.call(
+        [CLIENT_FILE, "get", SERVER_IP, str(SERVER_PORT), "secret.bin", "out.bin"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+    os.chmod(path, 0o644)  # Remise des droits pour le nettoyage
+    if ret != 0:
+        print(" -> OK (Le serveur a refusé la lecture du fichier protégé)")
+    else:
+        raise Exception("Le serveur aurait dû échouer sur le fichier sans droits")
+
+
+def test_error_disk_full_simulated():
+    print("[TEST ERROR 3] Disk Full / Write Error")
+    # On crée un sous-dossier protégé dans le serveur
+    protected_dir = f"{ROOT_SRV}/readonly_dir"
+    if not os.path.exists(protected_dir):
+        os.makedirs(protected_dir)
+    os.chmod(protected_dir, 0o555)  # Lecture/Exécution seulement (pas d'écriture)
+
+    src = f"{ROOT_CLI}/data.bin"
+    create_file(src, 1)
+
+    # Tentative de PUT dans le dossier protégé
+    ret = subprocess.call(
+        [CLIENT_FILE, "put", SERVER_IP, str(SERVER_PORT), src, "readonly_dir/data.bin"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+    if ret != 0:
+        print(" -> OK (Erreur d'écriture détectée)")
+    else:
+        raise Exception("Le serveur a réussi à écrire dans un répertoire protégé !")
 
 
 # TEST 1: PUT (Upload petit fichier)
@@ -549,6 +652,11 @@ def run_test():
     time.sleep(1)  # Laisser le temps de bind
 
     try:
+        test_error_illegal_opcode()
+        test_error_unknown_tid()
+        test_error_access_violation_read()
+        test_error_disk_full_simulated()
+
         test_put_small_file()
         test_get_large_file()
         test_error_missing_file()

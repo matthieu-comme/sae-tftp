@@ -139,6 +139,9 @@ int tftp_client_get(const char *server_ip, uint16_t server_port,
         {
             if (fwrite(data, 1, data_len, out) != data_len)
             {
+                uint8_t err[64];
+                int len = build_error(err, sizeof(err), 3, "Local disk full");
+                sendto(sock, err, len, 0, (struct sockaddr *)&tid, sizeof(tid));
                 perror("fwrite");
                 fclose(out);
                 close(sock);
@@ -284,7 +287,9 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
         size_t r = fread(data, 1, DATA_SIZE, in);
         if (ferror(in))
         {
-            perror("fread");
+            uint8_t err[64];
+            int len = build_error(err, sizeof(err), 2, "Local read error");
+            sendto(sock, err, len, 0, (struct sockaddr *)&tid, sizeof(tid));
             fclose(in);
             close(sock);
             return -1;
