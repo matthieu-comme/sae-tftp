@@ -108,6 +108,36 @@ void test_build_rrq_wrq()
     printf("=== TOUS LES TESTS BUILD_RRQ_WRQ SONT PASSÉS ! ===\n");
 }
 
+// ----- build_oack -----
+void test_oack_success()
+{
+    printf("Test: OACK valide... ");
+    uint8_t buffer[100];
+    int size = build_oack(buffer, sizeof(buffer), 1, 4);
+
+    int expected_size = 2 + 10 + 13; // opcode(2) + bigfile\01\0(10) + windowsize\04\0(13)
+    assert(size == expected_size);
+    assert(buffer[0] == 0 && buffer[1] == 6); // Verif Opcode OACK (6)
+    printf("OK\n");
+}
+
+void test_oack_no_options()
+{
+    printf("Test: OACK sans option (doit échouer/ignorer)... ");
+    uint8_t buffer[100];
+    int size = build_oack(buffer, sizeof(buffer), 0, 1);
+    assert(size == -1);
+    printf("OK\n");
+}
+
+void test_build_oack()
+{
+    printf("\n=== TESTS BUILD_OACK ===\n");
+    test_oack_success();
+    test_oack_no_options();
+    printf("=== TOUS LES TESTS BUILD_OACK SONT PASSÉS ! ===\n");
+}
+
 // ----- build_data -----
 
 void test_data_success_normal()
@@ -526,16 +556,14 @@ void test_parse_rrq_wrq()
 int main()
 {
     test_build_rrq_wrq();
-    test_parse_rrq_wrq();
-    /*
     test_build_data();
     test_build_ack();
     test_build_error();
+    test_build_oack();
 
+    test_parse_rrq_wrq();
     test_parse_opcode();
     test_parse_block();
-
-    */
 
     return 0;
 }

@@ -15,6 +15,7 @@
 #define OPCODE_DATA 3
 #define OPCODE_ACK 4
 #define OPCODE_ERROR 5
+#define OPCODE_OACK 6
 #define DATA_SIZE 512
 #define MAX_RETRIES 3
 #define TIMEOUT_MS 2000
@@ -29,6 +30,7 @@ int init_server_addr(sockaddr_in *server_addr);
 int build_data(uint8_t *buffer, size_t buffer_size, uint16_t block_number,
                const uint8_t *data, size_t data_len);
 int build_ack(unsigned char *buffer, size_t buffer_size, uint16_t block_number);
+int build_oack(uint8_t *buffer, size_t buffer_size, int ack_bigfile, uint16_t ack_windowsize);
 int safe_name(const char *name);
 int parse_opcode(const uint8_t *buffer, size_t buffer_size, uint16_t *opcode);
 int parse_block(const uint8_t *buffer, size_t buffer_size, uint16_t *block_number);

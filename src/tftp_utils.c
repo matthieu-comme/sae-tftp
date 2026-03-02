@@ -280,6 +280,47 @@ int build_error(uint8_t *buffer, size_t buffer_size, uint16_t error_code, const 
     return (int)need;
 }
 
+// le serveur confirme au client qu'il accepte les options
+int build_oack(uint8_t *buffer, size_t buffer_size, int ack_bigfile, uint16_t ack_windowsize)
+{
+    size_t need = 2;
+    char ws_str[16] = {0};
+
+    if (ack_bigfile)
+        need += 8 + 2; // "bigfile"\0 + "1"\0
+    if (ack_windowsize > 1)
+    {
+        snprintf(ws_str, sizeof(ws_str), "%u", ack_windowsize);
+        need += 11 + strlen(ws_str) + 1; // "windowsize"\0 + len() + \0
+    }
+
+    if (need > buffer_size || need == 2)
+        return -1; // Ne rien envoyer si aucune option
+
+    int offset = 0;
+    uint16_t opn = htons(OPCODE_OACK);
+    memcpy(buffer + offset, &opn, 2);
+    offset += 2;
+
+    if (ack_bigfile)
+    {
+        memcpy(buffer + offset, "bigfile", 8);
+        offset += 8;
+        memcpy(buffer + offset, "1", 2);
+        offset += 2;
+    }
+
+    if (ack_windowsize > 1)
+    {
+        memcpy(buffer + offset, "windowsize", 11);
+        offset += 11;
+        memcpy(buffer + offset, ws_str, strlen(ws_str) + 1);
+        offset += strlen(ws_str) + 1;
+    }
+
+    return offset;
+}
+
 /* --------------- Parsers --------------- */
 
 int parse_opcode(const uint8_t *buffer, size_t buffer_size, uint16_t *opcode)
