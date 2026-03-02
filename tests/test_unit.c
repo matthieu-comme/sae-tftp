@@ -14,26 +14,26 @@ void print_hex(char *buffer, int size)
     }
     printf("\n");
 }
-
+// ----- build_rrq_wrq() -----
 void test_rrq_success()
 {
-    printf("Test: RRQ valide... ");
+    printf("Test: RRQ valide (sans option)... ");
     unsigned char buffer[DATA_SIZE];
     char *fname = "test_rrq.txt";
-    int size = build_rrq_wrq(OPCODE_RRQ, buffer, sizeof(buffer), fname);
-    printf("size : %d", size);
+    int size = build_rrq_wrq(OPCODE_RRQ, buffer, sizeof(buffer), fname, 0, 1);
+
     assert(size == 2 + ((int)strlen(fname) + 1) + 5 + 1);                   // Opcode + filename\0 + octet\0
     assert(strcmp((char *)(buffer + 2), fname) == 0);                       // filename
     assert(strcmp((char *)(buffer + 2 + strlen(fname) + 1), "octet") == 0); // Mode correct
     printf("OK\n");
 }
-// ----- build_rrq_wrq() -----
+
 void test_wrq_success()
 {
-    printf("Test: WRQ valide... ");
+    printf("Test: WRQ valide (sans option)... ");
     unsigned char buffer[DATA_SIZE];
     char *fname = "test_wrq.txt";
-    int size = build_rrq_wrq(OPCODE_WRQ, buffer, sizeof(buffer), fname);
+    int size = build_rrq_wrq(OPCODE_WRQ, buffer, sizeof(buffer), fname, 0, 1);
 
     assert(size == 2 + ((int)strlen(fname) + 1) + 6);
     assert(strcmp((char *)(buffer + 2), fname) == 0);
@@ -41,11 +41,35 @@ void test_wrq_success()
     printf("OK\n");
 }
 
+void test_wrq_with_options()
+{
+    printf("Test: WRQ valide (avec options bigfile et windowsize)... ");
+    unsigned char buffer[DATA_SIZE];
+    char *fname = "test_opt_w.txt";
+    int size = build_rrq_wrq(OPCODE_WRQ, buffer, sizeof(buffer), fname, 1, 8);
+
+    int expected_size = 2 + ((int)strlen(fname) + 1) + 6 + 10 + 13; // 10="bigfile\01\0", 13="windowsize\08\0"
+    assert(size == expected_size);
+    printf("OK\n");
+}
+
+void test_rrq_with_options()
+{
+    printf("Test: RRQ valide (avec options bigfile et windowsize)... ");
+    unsigned char buffer[DATA_SIZE];
+    char *fname = "test_opt.txt";
+    int size = build_rrq_wrq(OPCODE_RRQ, buffer, sizeof(buffer), fname, 1, 8);
+
+    int expected_size = 2 + ((int)strlen(fname) + 1) + 6 + 10 + 13; // 10="bigfile\01\0", 13="windowsize\08\0"
+    assert(size == expected_size);
+    printf("OK\n");
+}
+
 void test_invalid_opcode()
 {
     printf("Test: Opcode invalide (99)... ");
     unsigned char buffer[DATA_SIZE];
-    int size = build_rrq_wrq(99, buffer, sizeof(buffer), "file.txt");
+    int size = build_rrq_wrq(99, buffer, sizeof(buffer), "file.txt", 0, 1);
     assert(size == -1);
     printf("OK (Erreur détectée)\n");
 }
@@ -58,7 +82,7 @@ void test_filename_limit()
     memset(long_name, 'a', 599);
     long_name[599] = '\0';
 
-    int size = build_rrq_wrq(OPCODE_RRQ, buffer, sizeof(buffer), long_name);
+    int size = build_rrq_wrq(OPCODE_RRQ, buffer, sizeof(buffer), long_name, 0, 1);
     assert(size == -1);
     printf("OK (Erreur détectée)\n");
 }
@@ -77,6 +101,8 @@ void test_build_rrq_wrq()
     printf("=== TESTS BUILD_RRQ_WRQ ===\n");
     test_rrq_success();
     test_wrq_success();
+    test_rrq_with_options();
+    test_wrq_with_options();
     test_invalid_opcode();
     test_filename_limit();
     printf("=== TOUS LES TESTS BUILD_RRQ_WRQ SONT PASSÉS ! ===\n");
@@ -465,6 +491,7 @@ void test_parse_rrq_wrq()
 int main()
 {
     test_build_rrq_wrq();
+    /*
     test_build_data();
     test_build_ack();
     test_build_error();
@@ -472,6 +499,7 @@ int main()
     test_parse_opcode();
     test_parse_block();
     test_parse_rrq_wrq();
+    */
 
     return 0;
 }

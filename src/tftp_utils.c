@@ -182,7 +182,7 @@ int safe_name(const char *name)
 
 /* --------------- Builders --------------- */
 
-int build_rrq_wrq(uint16_t op_code, unsigned char *buffer, size_t buffer_size, const char *filename)
+int build_rrq_wrq(uint16_t op_code, unsigned char *buffer, size_t buffer_size, const char *filename, int use_bigfile, uint16_t window_size)
 {
     if (op_code != OPCODE_RRQ && op_code != OPCODE_WRQ)
     {
@@ -190,10 +190,22 @@ int build_rrq_wrq(uint16_t op_code, unsigned char *buffer, size_t buffer_size, c
         return -1;
     }
     size_t filename_len = strlen(filename);
-    // opcode + len(filename) + \0 + len("octet") + \0
-    if (2 + filename_len + 1 + 5 + 1 > buffer_size)
+    // need = opcode + len(filename) + \0 + len("octet") + \0
+    size_t need = 2 + filename_len + 1 + 5 + 1;
+
+    if (use_bigfile)
+        need += 8 + 2;
+
+    char ws_str[16];
+    if (window_size > 1)
+    { // convertir windowsize en string pour le rfc 2347
+        snprintf(ws_str, sizeof(ws_str), "%u", window_size);
+        need += 10 + 1 + strlen(ws_str) + 1; // len(windowsize) + \0 + val + \0
+    }
+
+    if (need > buffer_size)
     {
-        fprintf(stderr, "Erreur: nom du fichier trop long (%ld octets)\n", filename_len);
+        fprintf(stderr, "Erreur: buffer trop petit\n");
         return -1;
     }
 
@@ -207,6 +219,22 @@ int build_rrq_wrq(uint16_t op_code, unsigned char *buffer, size_t buffer_size, c
 
     memcpy(buffer + offset, "octet", 6);
     offset += strlen("octet") + 1;
+
+    if (use_bigfile)
+    {
+        memcpy(buffer + offset, "bigfile", 8);
+        offset += 8;
+        memcpy(buffer + offset, "1", 2);
+        offset += 2;
+    }
+
+    if (window_size > 1)
+    {
+        memcpy(buffer + offset, "windowsize", 11);
+        offset += 11;
+        memcpy(buffer + offset, ws_str, strlen(ws_str) + 1);
+        offset += strlen(ws_str) + 1;
+    }
 
     return offset;
 }

@@ -22,7 +22,7 @@
 typedef struct sockaddr_in sockaddr_in;
 
 void display_packet(const char *buffer, int size);
-int build_rrq_wrq(uint16_t op_code, unsigned char *buffer, size_t buffer_size, const char *filename);
+int build_rrq_wrq(uint16_t op_code, unsigned char *buffer, size_t buffer_size, const char *filename, int use_bigfile, uint16_t window_size);
 char *load_file(char *filename, size_t *data_size);
 void send_data(int sockfd, struct sockaddr_in *addr, unsigned char *data, size_t data_size);
 int init_server_addr(sockaddr_in *server_addr);
