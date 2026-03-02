@@ -35,4 +35,5 @@ int parse_block(const uint8_t *buffer, size_t buffer_size, uint16_t *block_numbe
 int build_error(uint8_t *buffer, size_t buffer_size, uint16_t error_code, const char *error_msg);
 int parse_rrq_wrq(const uint8_t *buffer, size_t buffer_size,
                   char *filename, size_t fmax,
-                  char *mode, size_t mmax);
+                  char *mode, size_t mmax,
+                  int *bigfile_req, uint16_t *windowsize_req);

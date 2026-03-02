@@ -305,11 +305,14 @@ int parse_block(const uint8_t *buffer, size_t buffer_size, uint16_t *block_numbe
 // RRQ/WRQ: [op(2)] [filename]\0 [mode]\0
 int parse_rrq_wrq(const uint8_t *buffer, size_t buffer_size,
                   char *filename, size_t fmax,
-                  char *mode, size_t mmax)
+                  char *mode, size_t mmax,
+                  int *bigfile_req, uint16_t *windowsize_req)
 {
     if (buffer_size < 4)
         return -1;
     size_t i = 2;
+    *bigfile_req = 0;
+    *windowsize_req = 1;
 
     size_t f = 0;
     while (i < buffer_size && buffer[i] != 0)
@@ -333,6 +336,45 @@ int parse_rrq_wrq(const uint8_t *buffer, size_t buffer_size,
     if (i >= buffer_size || buffer[i] != 0)
         return -1;
     mode[m] = 0;
+    i++;
+
+    while (i < buffer_size)
+    {
+        char opt[64];
+        size_t o = 0;
+        while (i < buffer_size && buffer[i] != 0)
+        {
+            if (o + 1 < sizeof(opt))
+                opt[o++] = (char)tolower(buffer[i]);
+            i++;
+        }
+        if (i >= buffer_size)
+            break;
+        opt[o] = 0;
+        i++;
+
+        char val[64];
+        size_t v = 0;
+        while (i < buffer_size && buffer[i] != 0)
+        {
+            if (v + 1 < sizeof(val))
+                val[v++] = (char)buffer[i];
+            i++;
+        }
+        if (i >= buffer_size)
+            break;
+        val[v] = 0;
+        i++;
+
+        if (strcmp(opt, "bigfile") == 0)
+        {
+            *bigfile_req = 1;
+        }
+        else if (strcmp(opt, "windowsize") == 0)
+        {
+            *windowsize_req = (uint16_t)atoi(val);
+        }
+    }
 
     return 0;
 }

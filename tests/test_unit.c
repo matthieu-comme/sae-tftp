@@ -412,7 +412,7 @@ void test_parse_block()
 // --- test_parse_rrq_wrq ---
 void test_parse_rrq_success()
 {
-    printf("Test: Parse RRQ valide... ");
+    printf("Test: Parse RRQ valide (sans options)... ");
     // paquet : [0,1] "toto" \0 "octet" \0
     uint8_t buffer[] = {
         0, 1,                      // opcode RRQ
@@ -422,12 +422,40 @@ void test_parse_rrq_success()
 
     char fname[100];
     char mode[100];
+    int bigfile_req;
+    uint16_t ws_req;
 
-    int res = parse_rrq_wrq(buffer, sizeof(buffer), fname, sizeof(fname), mode, sizeof(mode));
+    int res = parse_rrq_wrq(buffer, sizeof(buffer), fname, sizeof(fname), mode, sizeof(mode), &bigfile_req, &ws_req);
 
     assert(res == 0);
     assert(strcmp(fname, "toto") == 0);
     assert(strcmp(mode, "octet") == 0);
+    assert(bigfile_req == 0);
+    assert(ws_req == 1);
+
+    printf("OK\n");
+}
+void test_parse_rrq_with_options()
+{
+    printf("Test: Parse RRQ valide (avec options)... ");
+    uint8_t buffer[] = {
+        0, 1,
+        't', 'o', 't', 'o', 0,
+        'o', 'c', 't', 'e', 't', 0,
+        'b', 'i', 'g', 'f', 'i', 'l', 'e', 0, '1', 0,
+        'w', 'i', 'n', 'd', 'o', 'w', 's', 'i', 'z', 'e', 0, '8', 0};
+
+    char fname[100];
+    char mode[100];
+    int bigfile_req;
+    uint16_t ws_req;
+
+    int res = parse_rrq_wrq(buffer, sizeof(buffer), fname, sizeof(fname), mode, sizeof(mode), &bigfile_req, &ws_req);
+
+    assert(res == 0);
+    assert(strcmp(fname, "toto") == 0);
+    assert(bigfile_req == 1);
+    assert(ws_req == 8);
 
     printf("OK\n");
 }
@@ -439,8 +467,10 @@ void test_parse_rrq_output_too_small()
 
     char fname[3]; // trop petit pour "long" + \0
     char mode[100];
+    int bigfile_req;
+    uint16_t ws_req;
 
-    int res = parse_rrq_wrq(buffer, sizeof(buffer), fname, sizeof(fname), mode, sizeof(mode));
+    int res = parse_rrq_wrq(buffer, sizeof(buffer), fname, sizeof(fname), mode, sizeof(mode), &bigfile_req, &ws_req);
 
     assert(res == -1);
     printf("OK (Erreur détectée)\n");
@@ -453,8 +483,10 @@ void test_parse_rrq_missing_null_filename()
 
     char fname[100];
     char mode[100];
+    int bigfile_req;
+    uint16_t ws_req;
 
-    int res = parse_rrq_wrq(buffer, sizeof(buffer), fname, sizeof(fname), mode, sizeof(mode));
+    int res = parse_rrq_wrq(buffer, sizeof(buffer), fname, sizeof(fname), mode, sizeof(mode), &bigfile_req, &ws_req);
 
     assert(res == -1); // échoue car on atteint buffer_size sans trouver le 0
     printf("OK (Sécurité validée)\n");
@@ -472,8 +504,10 @@ void test_parse_rrq_missing_null_mode()
 
     char fname[100];
     char mode[100];
+    int bigfile_req;
+    uint16_t ws_req;
 
-    int res = parse_rrq_wrq(buffer, sizeof(buffer), fname, sizeof(fname), mode, sizeof(mode));
+    int res = parse_rrq_wrq(buffer, sizeof(buffer), fname, sizeof(fname), mode, sizeof(mode), &bigfile_req, &ws_req);
 
     assert(res == -1);
     printf("OK (Sécurité validée)\n");
@@ -483,6 +517,7 @@ void test_parse_rrq_wrq()
 {
     printf("\n=== TESTS PARSE_RRQ_WRQ ===\n");
     test_parse_rrq_success();
+    test_parse_rrq_with_options();
     test_parse_rrq_output_too_small();
     test_parse_rrq_missing_null_filename();
     test_parse_rrq_missing_null_mode();
@@ -491,6 +526,7 @@ void test_parse_rrq_wrq()
 int main()
 {
     test_build_rrq_wrq();
+    test_parse_rrq_wrq();
     /*
     test_build_data();
     test_build_ack();
@@ -498,7 +534,7 @@ int main()
 
     test_parse_opcode();
     test_parse_block();
-    test_parse_rrq_wrq();
+
     */
 
     return 0;
