@@ -26,7 +26,7 @@ static void print_error_pkt(const uint8_t *buf, size_t len)
 
 /* ------------------- API: GET (RRQ) ------------------- */
 int tftp_client_get(const char *server_ip, uint16_t server_port,
-                    const char *remote_file, const char *local_file)
+                    const char *remote_file, const char *local_file, int use_bigfile, uint16_t window_size)
 {
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0)
@@ -55,7 +55,7 @@ int tftp_client_get(const char *server_ip, uint16_t server_port,
     uint8_t last_sent[4 + DATA_SIZE + 64];
     size_t last_len = 0;
 
-    int rrq_len = build_rrq_wrq(OPCODE_RRQ, last_sent, sizeof(last_sent), remote_file);
+    int rrq_len = build_rrq_wrq(OPCODE_RRQ, last_sent, sizeof(last_sent), remote_file, use_bigfile, window_size);
     if (rrq_len < 0)
     {
         fprintf(stderr, "RRQ build failed\n");
@@ -175,7 +175,7 @@ int tftp_client_get(const char *server_ip, uint16_t server_port,
 
 /* ------------------- API: PUT (WRQ) ------------------- */
 int tftp_client_put(const char *server_ip, uint16_t server_port,
-                    const char *local_file, const char *remote_file)
+                    const char *local_file, const char *remote_file, int use_bigfile, uint16_t window_size)
 {
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0)
@@ -204,7 +204,7 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
     uint8_t last_sent[4 + DATA_SIZE + 64];
     size_t last_len = 0;
 
-    int wrq_len = build_rrq_wrq(OPCODE_WRQ, last_sent, sizeof(last_sent), remote_file);
+    int wrq_len = build_rrq_wrq(OPCODE_WRQ, last_sent, sizeof(last_sent), remote_file, use_bigfile, window_size);
     if (wrq_len < 0)
     {
         fprintf(stderr, "WRQ build failed\n");
@@ -362,26 +362,56 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
 
 int main(int argc, char **argv)
 {
-    if (argc < 6)
+    // options par défaut
+    int use_bigfile = 0;
+    uint16_t window_size = 1;
+    int opt_index = 1;
+
+    // update des options
+    while (opt_index < argc && argv[opt_index][0] == '-')
+    {
+        if (strcmp(argv[opt_index], "-b") == 0)
+        {
+            use_bigfile = 1;
+            opt_index++;
+        }
+        else if (strcmp(argv[opt_index], "-w") == 0 && opt_index + 1 < argc)
+        {
+            window_size = (uint16_t)atoi(argv[opt_index] + 1);
+            opt_index += 2;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    if (argc - opt_index < 5)
     {
         fprintf(stderr,
                 "Usage:\n"
-                "  %s get <server_ip> <port> <remote_file> <local_file>\n"
-                "  %s put <server_ip> <port> <local_file> <remote_file>\n",
+                "  %s get [-b] [-w windowsize] <server_ip> <port> <remote_file> <local_file>\n"
+                "  %s put [-b] [-w windowsize] <server_ip> <port> <local_file> <remote_file>\n",
                 argv[0], argv[0]);
         return 1;
     }
 
-    if (strcmp(argv[1], "get") == 0)
+    const char *cmd = argv[opt_index];
+    const char *server_ip = argv[opt_index + 1];
+    uint16_t port = (uint16_t)atoi(argv[opt_index + 2]);
+    const char *file1 = argv[opt_index + 3];
+    const char *file2 = argv[opt_index + 4];
+
+    if (strcmp(cmd, "get") == 0)
     {
-        return tftp_client_get(argv[2], atoi(argv[3]), argv[4], argv[5]);
+        return tftp_client_get(server_ip, port, file1, file2, use_bigfile, window_size);
     }
 
-    if (strcmp(argv[1], "put") == 0)
+    if (strcmp(cmd, "put") == 0)
     {
-        return tftp_client_put(argv[2], atoi(argv[3]), argv[4], argv[5]);
+        return tftp_client_put(server_ip, port, file1, file2, use_bigfile, window_size);
     }
 
-    fprintf(stderr, "Unknown command: %s\n", argv[1]);
+    fprintf(stderr, "Unknown command: %s\n", cmd);
     return 1;
 }
