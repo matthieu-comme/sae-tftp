@@ -24,12 +24,18 @@ typedef struct ClientContext
     char filename[DATA_SIZE];
     FILE *fp;          // fichier ouvert
     uint16_t block;    // numero de bloc attendu (WRQ) ou dernier envoyé (RRQ)
+    uint32_t block_32; // pour gérer le dépassement (bigfile)
     ClientState state; // état actuel
 
     uint8_t last_packet[4 + DATA_SIZE]; // copie du dernier paquet envoyé
     size_t last_packet_len;
     time_t last_activity; // pour gérer le timeout
     int retries;
+
+    int bigfile_active; // = 1 si bigfile, 0 sinon
+    uint16_t window_size;
+    uint16_t window_count;
+    long window_start_pos; // position dans le fichier au début de la window
 
     struct ClientContext *next; // liste chainée
 } ClientContext;
@@ -41,7 +47,7 @@ int step_rrq(ClientContext *ctx, uint8_t *rx_buf, ssize_t rx_len)
 {
     uint16_t op;
     if (parse_opcode(rx_buf, rx_len, &op) < 0)
-        return 0; // Ignorer paquet mal construit
+        return 0; // ignorer paquet mal construit
 
     // vérifications opcode
     if (op == OPCODE_ERROR)
@@ -58,40 +64,55 @@ int step_rrq(ClientContext *ctx, uint8_t *rx_buf, ssize_t rx_len)
     if (parse_block(rx_buf, rx_len, &ack_block) < 0)
         return 0;
 
-    if (ack_block == ctx->block)
+    uint16_t expected_ack = (uint16_t)(ctx->block_32 & 0xFFFF);
+
+    if (ack_block == expected_ack)
     {
         // dernier paquet
-        if (ctx->last_packet_len < 4 + DATA_SIZE)
+        if (ctx->last_packet_len < 4 + DATA_SIZE && ctx->block_32 > 0)
         {
             ctx->state = STATE_FINISHED;
             return 0;
         }
 
-        // bloc suivant
-        ctx->block++;
-        uint8_t data_read[DATA_SIZE];
-        size_t read_len = fread(data_read, 1, DATA_SIZE, ctx->fp);
+        ctx->window_count = 0;
+        ctx->window_start_pos = ftell(ctx->fp);
 
-        if (ferror(ctx->fp))
+        // envoi en vague
+        while (ctx->window_count < ctx->window_size)
         {
-            uint8_t err[64];
-            int len = build_error(err, sizeof(err), 2, "Access violation / Read error");
-            sendto(ctx->sock, err, len, 0, (struct sockaddr *)&ctx->addr, ctx->addr_len);
-            return -1;
+            ctx->block_32++;
+            ctx->block = (uint16_t)(ctx->block_32 & 0xFFFF);
+
+            uint8_t data_read[DATA_SIZE];
+            size_t read_len = fread(data_read, 1, DATA_SIZE, ctx->fp);
+
+            if (ferror(ctx->fp))
+            {
+                uint8_t err[64];
+                int len = build_error(err, sizeof(err), 2, "Access violation / Read error");
+                sendto(ctx->sock, err, len, 0, (struct sockaddr *)&ctx->addr, ctx->addr_len);
+                return -1;
+            }
+
+            int len = build_data(ctx->last_packet, sizeof(ctx->last_packet), ctx->block, data_read, read_len);
+            ctx->last_packet_len = len;
+
+            sendto(ctx->sock, ctx->last_packet, len, 0, (struct sockaddr *)&ctx->addr, sizeof(ctx->addr));
+
+            ctx->window_count++;
+
+            if (read_len < DATA_SIZE) // fin du fichier
+                break;
         }
 
-        // construit DATA
-        int len = build_data(ctx->last_packet, sizeof(ctx->last_packet), ctx->block, data_read, read_len);
-        ctx->last_packet_len = len;
-
-        sendto(ctx->sock, ctx->last_packet, len, 0, (struct sockaddr *)&ctx->addr, sizeof(ctx->addr));
-        ctx->last_activity = time(NULL); // reset timer
-    }
-    else if (ack_block == (uint16_t)(ctx->block - 1))
-    {
-        // ACK précédent (perte du DATA) -> on retransmet
-        sendto(ctx->sock, ctx->last_packet, ctx->last_packet_len, 0, (struct sockaddr *)&ctx->addr, sizeof(ctx->addr));
         ctx->last_activity = time(NULL);
+    }
+    else
+    {
+        // on rewind
+        fseek(ctx->fp, ctx->window_start_pos, SEEK_SET);
+        ctx->block_32 -= ctx->window_count;
     }
 
     return 0;
@@ -104,20 +125,24 @@ int step_wrq(ClientContext *ctx, uint8_t *rx_buf, ssize_t rx_len)
     if (parse_opcode(rx_buf, rx_len, &op) < 0)
         return 0;
 
+    // on ignore tout sauf erreur et data
     if (op == OPCODE_ERROR)
         return -1;
     if (op != OPCODE_DATA)
-        return 0; // ignore tout sauf erreur et data
+        return 0;
 
     // verif bloc
     uint16_t data_block;
     if (parse_block(rx_buf, rx_len, &data_block) < 0)
         return 0;
 
-    if (data_block == ctx->block)
+    uint16_t expected_block = (uint16_t)((ctx->block_32 + 1) & 0xFFFF);
+
+    if (data_block == expected_block)
     {
         size_t data_payload_len = rx_len - 4;
         const uint8_t *data_ptr = rx_buf + 4;
+
         //  écriture
         if (fwrite(data_ptr, 1, data_payload_len, ctx->fp) != data_payload_len)
         {
@@ -126,18 +151,24 @@ int step_wrq(ClientContext *ctx, uint8_t *rx_buf, ssize_t rx_len)
             sendto(ctx->sock, err, len, 0, (struct sockaddr *)&ctx->addr, ctx->addr_len);
             return -1;
         }
-        // force l'écriture pour éviter les bugs de race condition
-        if (data_payload_len < DATA_SIZE)
-            fflush(ctx->fp);
 
-        // construire et envoyer ACK
-        int len = build_ack(ctx->last_packet, sizeof(ctx->last_packet), ctx->block);
-        ctx->last_packet_len = len;
+        ctx->block_32++;
+        ctx->window_count++;
+        ctx->block = (uint16_t)(ctx->block_32 & 0xFFFF);
 
-        sendto(ctx->sock, ctx->last_packet, len, 0, (struct sockaddr *)&ctx->addr, sizeof(ctx->addr));
-        ctx->last_activity = time(NULL);
+        if (ctx->window_count >= ctx->window_size || data_payload_len < DATA_SIZE)
+        { // force l'écriture pour éviter les bugs de race condition
+            if (data_payload_len < DATA_SIZE)
+                fflush(ctx->fp);
 
-        ctx->block++;
+            // construire et envoyer ACK
+            int len = build_ack(ctx->last_packet, sizeof(ctx->last_packet), ctx->block);
+            ctx->last_packet_len = len;
+
+            sendto(ctx->sock, ctx->last_packet, len, 0, (struct sockaddr *)&ctx->addr, sizeof(ctx->addr));
+            ctx->last_activity = time(NULL);
+            ctx->window_count = 0;
+        }
 
         // si dernier paquet
         if (data_payload_len < DATA_SIZE)
@@ -154,7 +185,7 @@ int step_wrq(ClientContext *ctx, uint8_t *rx_buf, ssize_t rx_len)
         }
     }
     // bloc précédent -> doublon
-    else if (data_block == (uint16_t)(ctx->block - 1))
+    else if (data_block == (uint16_t)(ctx->block_32 & 0xFFFF))
     {
         // on renvoie l'ack précédent
         sendto(ctx->sock, ctx->last_packet, ctx->last_packet_len, 0, (struct sockaddr *)&ctx->addr, sizeof(ctx->addr));
