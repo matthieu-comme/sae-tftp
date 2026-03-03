@@ -291,11 +291,11 @@ int build_oack(uint8_t *buffer, size_t buffer_size, int ack_bigfile, uint16_t ac
     if (ack_windowsize > 1)
     {
         snprintf(ws_str, sizeof(ws_str), "%u", ack_windowsize);
-        need += 11 + strlen(ws_str) + 1; // "windowsize"\0 + len() + \0
+        need += 11 + strlen(ws_str) + 1; // "windowsize"\0 + len(ws_str) + \0
     }
 
     if (need > buffer_size || need == 2)
-        return -1; // Ne rien envoyer si aucune option
+        return -1; // rien envoyer si aucune option
 
     int offset = 0;
     uint16_t opn = htons(OPCODE_OACK);
@@ -340,6 +340,54 @@ int parse_block(const uint8_t *buffer, size_t buffer_size, uint16_t *block_numbe
     uint16_t x;
     memcpy(&x, buffer + 2, 2);
     *block_number = ntohs(x);
+    return 0;
+}
+
+int parse_oack(const uint8_t *buffer, size_t buffer_size, int *bigfile_ack, uint16_t *windowsize_ack)
+{
+    if (buffer_size < 2)
+        return -1;
+
+    // on zappe 0 et 1 (opcode)
+    size_t i = 2;
+    *bigfile_ack = 0;
+    *windowsize_ack = 1;
+
+    while (i < buffer_size)
+    {
+        // parse le nom de l'option
+        char opt[64];
+        size_t o = 0;
+        while (i < buffer_size && buffer[i] != 0)
+        {
+            if (o + 1 < sizeof(opt))
+                opt[o++] = (char)tolower(buffer[i]);
+            i++;
+        }
+        if (i >= buffer_size)
+            break;
+        opt[o] = 0;
+        i++;
+
+        // parse la valeur de l'option
+        char val[64];
+        size_t v = 0;
+        while (i < buffer_size && buffer[i] != 0)
+        {
+            if (v + 1 < sizeof(val))
+                val[v++] = (char)buffer[i];
+            i++;
+        }
+        if (i >= buffer_size)
+            break;
+        val[v] = 0;
+        i++;
+
+        if (strcmp(opt, "bigfile") == 0)
+            *bigfile_ack = 1;
+        else if (strcmp(opt, "windowsize") == 0)
+            *windowsize_ack = (uint16_t)atoi(val);
+    }
     return 0;
 }
 

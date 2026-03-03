@@ -34,6 +34,7 @@ int build_oack(uint8_t *buffer, size_t buffer_size, int ack_bigfile, uint16_t ac
 int safe_name(const char *name);
 int parse_opcode(const uint8_t *buffer, size_t buffer_size, uint16_t *opcode);
 int parse_block(const uint8_t *buffer, size_t buffer_size, uint16_t *block_number);
+int parse_oack(const uint8_t *buffer, size_t buffer_size, int *bigfile_ack, uint16_t *windowsize_ack);
 int build_error(uint8_t *buffer, size_t buffer_size, uint16_t error_code, const char *error_msg);
 int parse_rrq_wrq(const uint8_t *buffer, size_t buffer_size,
                   char *filename, size_t fmax,

@@ -553,6 +553,105 @@ void test_parse_rrq_wrq()
     test_parse_rrq_missing_null_mode();
     printf("=== TOUS LES TESTS PARSE_RRQ_WRQ SONT PASSÉS ! ===\n");
 }
+void test_parse_oack_success_both()
+{
+    printf("Test: Parse OACK valide (bigfile + windowsize)... ");
+    uint8_t buffer[] = {
+        0, 6,
+        'b', 'i', 'g', 'f', 'i', 'l', 'e', 0, '1', 0,
+        'w', 'i', 'n', 'd', 'o', 'w', 's', 'i', 'z', 'e', 0, '1', '6', 0};
+    int bigfile_ack;
+    uint16_t ws_ack;
+    int res = parse_oack(buffer, sizeof(buffer), &bigfile_ack, &ws_ack);
+    assert(res == 0);
+    assert(bigfile_ack == 1);
+    assert(ws_ack == 16);
+    printf("OK\n");
+}
+
+void test_parse_oack_only_bigfile()
+{
+    printf("Test: Parse OACK valide (bigfile seul)... ");
+    uint8_t buffer[] = {
+        0, 6,
+        'b', 'i', 'g', 'f', 'i', 'l', 'e', 0, '1', 0};
+    int bigfile_ack;
+    uint16_t ws_ack;
+    int res = parse_oack(buffer, sizeof(buffer), &bigfile_ack, &ws_ack);
+    assert(res == 0);
+    assert(bigfile_ack == 1);
+    assert(ws_ack == 1);
+    printf("OK\n");
+}
+
+void test_parse_oack_only_windowsize()
+{
+    printf("Test: Parse OACK valide (windowsize seul)... ");
+    uint8_t buffer[] = {
+        0, 6,
+        'w', 'i', 'n', 'd', 'o', 'w', 's', 'i', 'z', 'e', 0, '8', 0};
+    int bigfile_ack;
+    uint16_t ws_ack;
+    int res = parse_oack(buffer, sizeof(buffer), &bigfile_ack, &ws_ack);
+    assert(res == 0);
+    assert(bigfile_ack == 0);
+    assert(ws_ack == 8);
+    printf("OK\n");
+}
+
+void test_parse_oack_unknown_options()
+{
+    printf("Test: Parse OACK avec options inconnues... ");
+    uint8_t buffer[] = {
+        0, 6,
+        't', 's', 'i', 'z', 'e', 0, '0', 0,
+        'b', 'i', 'g', 'f', 'i', 'l', 'e', 0, '1', 0};
+    int bigfile_ack;
+    uint16_t ws_ack;
+    int res = parse_oack(buffer, sizeof(buffer), &bigfile_ack, &ws_ack);
+    assert(res == 0);
+    assert(bigfile_ack == 1);
+    assert(ws_ack == 1);
+    printf("OK\n");
+}
+
+void test_parse_oack_too_short()
+{
+    printf("Test: Parse OACK trop court... ");
+    uint8_t buffer[] = {0};
+    int bigfile_ack;
+    uint16_t ws_ack;
+    int res = parse_oack(buffer, sizeof(buffer), &bigfile_ack, &ws_ack);
+    assert(res == -1);
+    printf("OK\n");
+}
+
+void test_parse_oack_missing_null()
+{
+    printf("Test: Parse OACK tronqué (sans null final)... ");
+    uint8_t buffer[] = {
+        0, 6,
+        'b', 'i', 'g', 'f', 'i', 'l', 'e', 0, '1'};
+    int bigfile_ack;
+    uint16_t ws_ack;
+    int res = parse_oack(buffer, sizeof(buffer), &bigfile_ack, &ws_ack);
+    assert(res == 0);
+    assert(bigfile_ack == 0);
+    printf("OK\n");
+}
+
+void test_parse_oack()
+{
+    printf("\n=== TESTS PARSE_OACK ===\n");
+    test_parse_oack_success_both();
+    test_parse_oack_only_bigfile();
+    test_parse_oack_only_windowsize();
+    test_parse_oack_unknown_options();
+    test_parse_oack_too_short();
+    test_parse_oack_missing_null();
+    printf("=== TOUS LES TESTS PARSE_OACK SONT PASSÉS ! ===\n");
+}
+
 int main()
 {
     test_build_rrq_wrq();
@@ -564,6 +663,7 @@ int main()
     test_parse_rrq_wrq();
     test_parse_opcode();
     test_parse_block();
+    test_parse_oack();
 
     return 0;
 }
