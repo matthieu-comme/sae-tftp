@@ -347,7 +347,7 @@ void handle_new_connection(int main_sock, const char *root_dir)
             char new_filename[512], new_mode[64];
 
             // meme fichier ?
-            if (parse_rrq_wrq(buf, n, new_filename, sizeof(new_filename), new_mode, sizeof(new_mode)) == 0)
+            if (parse_rrq_wrq(buf, n, new_filename, sizeof(new_filename), new_mode, sizeof(new_mode), 0, 1) == 0)
             {
                 if (strcmp(new_filename, exist->filename) == 0)
                 {
@@ -394,7 +394,7 @@ void handle_new_connection(int main_sock, const char *root_dir)
     }
 
     char filename[512], mode[64];
-    if (parse_rrq_wrq(buf, n, filename, sizeof(filename), mode, sizeof(mode)) < 0)
+    if (parse_rrq_wrq(buf, n, filename, sizeof(filename), mode, sizeof(mode), 0, 1) < 0)
     {
         fprintf(stderr, "ERROR: RRQ/WRQ parsing pour opcode %d\n", op);
         return;

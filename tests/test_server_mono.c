@@ -259,7 +259,7 @@ void test_handle_new_connection_rrq()
 
     // Construire paquet RRQ "test_init.txt"
     char buf[100];
-    int req_len = build_rrq_wrq(OPCODE_RRQ, (uint8_t *)buf, sizeof(buf), "test_init.txt");
+    int req_len = build_rrq_wrq(OPCODE_RRQ, (uint8_t *)buf, sizeof(buf), "test_init.txt", 0, 1);
 
     // Créer le fichier à lire
     create_dummy_file("test_init.txt", "INIT_DATA");

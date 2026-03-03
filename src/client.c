@@ -76,9 +76,12 @@ int tftp_client_get(const char *server_ip, uint16_t server_port,
     struct sockaddr_in tid;
     memset(&tid, 0, sizeof(tid));
     int tid_known = 0;
-
-    uint16_t expected = 1;
     int retries = 0;
+
+    uint32_t expected = 1;
+    int bigfile_ack = 0;
+    uint16_t windowsize_ack = 1;
+    uint16_t window_count = 0;
 
     for (;;)
     {
@@ -125,6 +128,18 @@ int tftp_client_get(const char *server_ip, uint16_t server_port,
             close(sock);
             return -1;
         }
+        if (op == OPCODE_OACK)
+        {
+            parse_oack(rx, (size_t)n, &bigfile_ack, &windowsize_ack);
+            int ack_len = build_ack(last_sent, sizeof(last_sent), 0);
+
+            sendto(sock, last_sent, ack_len, 0, (struct sockaddr *)&tid, sizeof(tid));
+
+            last_len = (size_t)ack_len;
+            retries = 0;
+            continue;
+        }
+
         if (op != OPCODE_DATA)
             continue;
 
@@ -132,10 +147,12 @@ int tftp_client_get(const char *server_ip, uint16_t server_port,
         if (parse_block(rx, (size_t)n, &block) < 0)
             continue;
 
+        uint16_t expected_16 = (uint16_t)(expected & 0xFFFF);
+
         size_t data_len = (size_t)n - 4;
         const uint8_t *data = rx + 4;
 
-        if (block == expected)
+        if (block == expected_16)
         {
             if (fwrite(data, 1, data_len, out) != data_len)
             {
@@ -147,17 +164,24 @@ int tftp_client_get(const char *server_ip, uint16_t server_port,
                 close(sock);
                 return -1;
             }
-            int ack_len = build_ack(last_sent, sizeof(last_sent), block);
-            sendto(sock, last_sent, ack_len, 0, (struct sockaddr *)&tid, sizeof(tid));
-            last_len = (size_t)ack_len;
+
+            expected++;
+            window_count++;
+
+            if (window_count >= windowsize_ack || data_len < DATA_SIZE)
+            {
+                int ack_len = build_ack(last_sent, sizeof(last_sent), block);
+                sendto(sock, last_sent, ack_len, 0, (struct sockaddr *)&tid, sizeof(tid));
+                last_len = (size_t)ack_len;
+                window_count = 0;
+            }
 
             retries = 0;
-            expected++;
 
             if (data_len < DATA_SIZE)
                 break; // last block
         }
-        else if (block == (uint16_t)(expected - 1))
+        else if (block == (uint16_t)(expected - 1) & 0xFFFF)
         {
             // duplicate DATA -> re-ACK
             int ack_len = build_ack(last_sent, sizeof(last_sent), block);
@@ -222,8 +246,10 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
     memset(&tid, 0, sizeof(tid));
     int tid_known = 0;
     int retries = 0;
+    int bigfile_ack = 0;
+    uint16_t windowsize_ack = 1;
 
-    // Wait ACK(0)
+    // Wait OACK ou ACK(0)
     for (;;)
     {
         struct sockaddr_in src;
@@ -270,6 +296,13 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
             close(sock);
             return -1;
         }
+
+        if (op == OPCODE_OACK)
+        {
+            parse_oack(rx, (size_t)n, &bigfile_ack, &windowsize_ack);
+            break;
+        }
+
         if (op != OPCODE_ACK)
             continue;
 
@@ -280,27 +313,50 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
             break;
     }
 
-    uint16_t block = 1;
+    uint32_t block = 1;
+    int is_last_block = 0;
+
     for (;;)
     {
-        uint8_t data[DATA_SIZE];
-        size_t r = fread(data, 1, DATA_SIZE, in);
-        if (ferror(in))
+        uint16_t window_count = 0;
+        long file_pos = ftello(in); // save la pos en cas de retransmission
+
+        // boucle d'envoi
+        while (window_count < windowsize_ack && !is_last_block)
         {
-            uint8_t err[64];
-            int len = build_error(err, sizeof(err), 2, "Local read error");
-            sendto(sock, err, len, 0, (struct sockaddr *)&tid, sizeof(tid));
-            fclose(in);
-            close(sock);
-            return -1;
+            uint8_t data[DATA_SIZE];
+            size_t r = fread(data, 1, DATA_SIZE, in);
+            if (ferror(in))
+            {
+                uint8_t err[64];
+                int len = build_error(err, sizeof(err), 2, "Local read error");
+                sendto(sock, err, len, 0, (struct sockaddr *)&tid, sizeof(tid));
+                fclose(in);
+                close(sock);
+                return -1;
+            }
+
+            uint16_t block_16 = (uint16_t)(block & 0xFFFF);
+            int dl = build_data(last_sent, sizeof(last_sent), block_16, data, r);
+
+            if (dl < 0)
+                return -1;
+
+            sendto(sock, last_sent, dl, 0, (struct sockaddr *)&tid, sizeof(tid));
+            last_len = (size_t)dl;
+
+            block++;
+            window_count++;
+
+            if (r < DATA_SIZE)
+                is_last_block = 1;
         }
 
-        int dl = build_data(last_sent, sizeof(last_sent), block, data, r);
-        sendto(sock, last_sent, dl, 0, (struct sockaddr *)&tid, sizeof(tid));
-        last_len = (size_t)dl;
-
         retries = 0;
-        for (;;)
+        int ack_received = 0;
+
+        // attend l'ack de la window
+        while (!ack_received)
         {
             struct sockaddr_in src;
             ssize_t n = recvfrom_timeout(sock, rx, sizeof(rx), &src, TIMEOUT_MS);
@@ -321,8 +377,11 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
                     close(sock);
                     return -1;
                 }
-                sendto(sock, last_sent, last_len, 0, (struct sockaddr *)&tid, sizeof(tid));
-                continue;
+                // on rewind le fichier et on renvoie la window
+                fseeko(in, file_pos, SEEK_SET);
+                block -= window_count;
+                is_last_block = 0;
+                break;
             }
 
             if (!addr_equal(&src, &tid))
@@ -345,13 +404,28 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
             uint16_t b;
             if (parse_block(rx, (size_t)n, &b) < 0)
                 continue;
-            if (b == block)
+
+            uint16_t expected_ack = (uint16_t)((block - 1) & 0xFFFF);
+
+            if (b == expected_ack)
+            {
+                ack_received = 1;
+            }
+            else
+            {
+                continue;
+                /*
+                // si ack inferieur reçu -> on recule dans le fichier
+                fseeko(in, file_pos, SEEK_SET);
+                block -= window_count;
+                is_last_block = 0;
                 break;
+                */
+            }
         }
 
-        if (r < DATA_SIZE)
-            break; // last block
-        block++;
+        if (ack_received && is_last_block)
+            break;
     }
 
     fclose(in);
