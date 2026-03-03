@@ -18,12 +18,8 @@ gcc -Wall -Iinclude tests/test_server_mono.c src/tftp_utils.c src/sockets.c -o t
 // On renomme le main du serveur pour éviter le conflit avec le main de test
 // ====================================================================
 #define main server_main
-#include "../src/server_mono.c"
+#include "../src/server.c"
 #undef main
-
-#ifndef DATA_SIZE
-#define DATA_SIZE 512
-#endif
 
 // ================= UTILITAIRES DE TEST =================
 

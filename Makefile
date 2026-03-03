@@ -5,8 +5,6 @@ CFLAGS = -Wall -Wextra -g -Iinclude -pthread
 CLIENT_NAME = tftp_client
 SERVER_NAME = tftp_server
 TEST_NAME = run_tests
-SERVER_MONO_NAME = tftp_server_mono
-SERVER_MULTI_NAME = tftp_server_multi
 
 # dossiers
 SRC_DIR = src
@@ -21,16 +19,12 @@ COMMON_SRCS = $(SRC_DIR)/sockets.c \
 # sources client/serveur (chacun contient SON main)
 CLIENT_SRCS = $(SRC_DIR)/client.c
 SERVER_SRCS = $(SRC_DIR)/server.c
-SERVER_MONO_SRCS = $(SRC_DIR)/server_mono.c
-SERVER_MULTI_SRCS = $(SRC_DIR)/server_multi.c
 
 COMMON_OBJS = $(COMMON_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 CLIENT_OBJS = $(CLIENT_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 SERVER_OBJS = $(SERVER_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
-SERVER_MONO_OBJS = $(SERVER_MONO_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
-SERVER_MULTI_OBJS = $(SERVER_MULTI_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 
-all: $(CLIENT_NAME) $(SERVER_NAME) $(SERVER_MONO_NAME) $(SERVER_MULTI_NAME)
+all: $(CLIENT_NAME) $(SERVER_NAME)
 
 # ---------- client ----------
 $(CLIENT_NAME): $(COMMON_OBJS) $(CLIENT_OBJS)
@@ -38,14 +32,6 @@ $(CLIENT_NAME): $(COMMON_OBJS) $(CLIENT_OBJS)
 
 # ---------- serveur ----------
 $(SERVER_NAME): $(COMMON_OBJS) $(SERVER_OBJS)
-	$(CC) $(CFLAGS) $^ -o $@
-
-# ---------- serveur monothread multi-clients ----------
-$(SERVER_MONO_NAME): $(COMMON_OBJS) $(SERVER_MONO_OBJS)
-	$(CC) $(CFLAGS) $^ -o $@
-
-# ---------- serveur multithread multi-clients ----------
-$(SERVER_MULTI_NAME): $(COMMON_OBJS) $(SERVER_MULTI_OBJS)
 	$(CC) $(CFLAGS) $^ -o $@
 
 # ---------- compilation objets ----------
@@ -60,13 +46,19 @@ tests: $(OBJ_DIR)/tftp_utils.o
 	@echo "Lancement des tests :"
 	@./$(TEST_NAME)
 
+tests_mono: $(OBJ_DIR)/tftp_utils.o
+	@echo "Compilation des tests..."
+	$(CC) $(CFLAGS) $(TEST_DIR)/test_server_mono.c $(OBJ_DIR)/tftp_utils.o -o $(TEST_NAME)
+	@echo "Lancement des tests :"
+	@./$(TEST_NAME)
+
 clean:
 	@echo "Suppression des objets..."
 	rm -rf $(OBJ_DIR)
 
 fclean: clean
 	@echo "Suppression des exécutables..."
-	rm -f $(CLIENT_NAME) $(SERVER_NAME) $(SERVER_MONO_NAME) $(SERVER_MULTI_NAME) $(TEST_NAME)
+	rm -f $(CLIENT_NAME) $(SERVER_NAME) $(TEST_NAME)
 
 re: fclean all
 

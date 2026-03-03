@@ -181,7 +181,7 @@ int tftp_client_get(const char *server_ip, uint16_t server_port,
             if (data_len < DATA_SIZE)
                 break; // last block
         }
-        else if (block == (uint16_t)(expected - 1) & 0xFFFF)
+        else if (block == ((uint16_t)(expected - 1) & 0xFFFF))
         {
             // duplicate DATA -> re-ACK
             int ack_len = build_ack(last_sent, sizeof(last_sent), block);

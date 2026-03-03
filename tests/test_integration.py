@@ -13,7 +13,7 @@ SERVER_PORT = 9069
 SERVER_IP = "127.0.0.1"
 ROOT_SRV = "test_srv_dir"
 ROOT_CLI = "test_cli_dir"
-SERVER_FILE = "./tftp_server_mono"
+SERVER_FILE = "./tftp_server"
 CLIENT_FILE = "./tftp_client"
 
 
@@ -212,6 +212,62 @@ def test_error_file_exists():
         sock.close()
 
 
+def test_error_option_w_missing_arg():
+    print("[TEST ERROR 7] Option -w sans argument")
+    ret = subprocess.call(
+        [CLIENT_FILE, "-w"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    if ret != 0:
+        print(" -> OK")
+    else:
+        raise Exception("Le client aurait dû échouer sur un usage incomplet")
+
+
+def test_error_option_invalid_value():
+    print("[TEST ERROR 8] Option -w invalide (fallback)")
+    src = f"{ROOT_CLI}/w_invalid.bin"
+    create_file(src, 1)
+    ret = subprocess.call(
+        [
+            CLIENT_FILE,
+            "-w",
+            "abc",
+            "put",
+            SERVER_IP,
+            str(SERVER_PORT),
+            src,
+            "w_invalid.bin",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if ret == 0:
+        print(' -> OK (Conversion atoi("abc")=0, repli sur défaut)')
+    else:
+        raise Exception("Le client a planté au lieu d'utiliser la valeur par défaut")
+
+
+def test_error_unrecognized_option():
+    print("[TEST ERROR 9] Option non reconnue (-x)")
+    ret = subprocess.call(
+        [
+            CLIENT_FILE,
+            "-x",
+            "get",
+            SERVER_IP,
+            str(SERVER_PORT),
+            "missing.bin",
+            "out.bin",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if ret != 0:
+        print(" -> OK")
+    else:
+        raise Exception("Le client aurait dû retourner une erreur d'usage")
+
+
 # TEST 1: PUT (Upload petit fichier)
 def test_put_small_file():
     print("[TEST 1] PUT small file")
@@ -352,7 +408,7 @@ def test_higher_block_number():
 
 # TEST 7: Concurrence put
 def test_concurrency_put():
-    print("\n[TEST 7] CONCURRENCY: 3 Clients simultanés")
+    print("\n[TEST 7] CONCURRENCY PUT: 3 Clients simultanés")
 
     # 1. Préparation des fichiers
     # Un "Gros" fichier pour occuper le serveur (ex: 20 Mo)
@@ -707,6 +763,138 @@ def test_concurrency_rw_lock():
     print(" -> OK : is_access_denied fonctionne correctement !")
 
 
+def test_windowsize_put():
+    print("[TEST 10] PUT avec option -w 16 (5 Mo)")
+    src, dst = f"{ROOT_CLI}/put_w.bin", f"{ROOT_SRV}/put_w.bin"
+    create_file(src, 5120)
+    subprocess.check_call(
+        [CLIENT_FILE, "-w", "16", "put", SERVER_IP, str(SERVER_PORT), src, "put_w.bin"]
+    )
+    time.sleep(1)
+    if md5(src) != md5(dst):
+        raise Exception("Échec PUT windowsize")
+    print(" -> OK")
+
+
+def test_windowsize_get():
+    print("[TEST 11] GET avec option -w 8 (5 Mo)")
+    src, dst = f"{ROOT_SRV}/get_w.bin", f"{ROOT_CLI}/get_w.bin"
+    create_file(src, 5120)
+    subprocess.check_call(
+        [CLIENT_FILE, "-w", "8", "get", SERVER_IP, str(SERVER_PORT), "get_w.bin", dst]
+    )
+    if md5(src) != md5(dst):
+        raise Exception("Échec GET windowsize")
+    print(" -> OK")
+
+
+def test_bigfile_put():
+    print("[TEST 12] PUT avec option -b (> 34 Mo)")
+    src, dst = f"{ROOT_CLI}/put_big.bin", f"{ROOT_SRV}/put_big.bin"
+    create_file(src, 35000)
+    subprocess.check_call(
+        [CLIENT_FILE, "-b", "put", SERVER_IP, str(SERVER_PORT), src, "put_big.bin"]
+    )
+    time.sleep(2)
+    if md5(src) != md5(dst):
+        raise Exception("Échec PUT Bigfile")
+    print(" -> OK")
+
+
+def test_bigfile_get():
+    print("[TEST 13] GET avec option -b (> 34 Mo)")
+    src, dst = f"{ROOT_SRV}/get_big.bin", f"{ROOT_CLI}/get_big.bin"
+    create_file(src, 35000)
+    subprocess.check_call(
+        [CLIENT_FILE, "-b", "get", SERVER_IP, str(SERVER_PORT), "get_big.bin", dst]
+    )
+    if md5(src) != md5(dst):
+        raise Exception("Échec GET Bigfile")
+    print(" -> OK")
+
+
+def test_combined_options_put():
+    print("[TEST 14] PUT avec options -b et -w 32 (> 34 Mo)")
+    src, dst = f"{ROOT_CLI}/put_comb.bin", f"{ROOT_SRV}/put_comb.bin"
+    create_file(src, 35000)
+    subprocess.check_call(
+        [
+            CLIENT_FILE,
+            "-b",
+            "-w",
+            "32",
+            "put",
+            SERVER_IP,
+            str(SERVER_PORT),
+            src,
+            "put_comb.bin",
+        ]
+    )
+    time.sleep(2)
+    if md5(src) != md5(dst):
+        raise Exception("Échec PUT Combiné")
+    print(" -> OK")
+
+
+def test_combined_options_get():
+    print("[TEST 15] GET avec options -b et -w 32 (> 34 Mo)")
+    src, dst = f"{ROOT_SRV}/get_comb.bin", f"{ROOT_CLI}/get_comb.bin"
+    create_file(src, 35000)
+    subprocess.check_call(
+        [
+            CLIENT_FILE,
+            "-b",
+            "-w",
+            "32",
+            "get",
+            SERVER_IP,
+            str(SERVER_PORT),
+            "get_comb.bin",
+            dst,
+        ]
+    )
+    if md5(src) != md5(dst):
+        raise Exception("Échec GET Combiné")
+    print(" -> OK")
+
+
+def test_errors():
+    test_error_not_defined()
+    test_error_file_not_found_strict
+    test_error_access_violation_read()
+    test_error_disk_full_simulated()
+    test_error_illegal_opcode()
+    test_error_unknown_tid()
+    test_error_file_exists()
+    test_error_option_w_missing_arg()
+    test_error_option_invalid_value()
+    test_error_unrecognized_option()
+
+
+def test_basic():
+    test_put_small_file()
+    test_get_large_file()
+    test_error_missing_file()
+    test_multiple_512()
+    test_security_access()
+    test_higher_block_number()
+
+
+def test_concurrency():
+    test_concurrency_put()
+    test_concurrency_get()
+    test_concurrency_rw_lock()
+
+
+def test_options():
+    test_windowsize_put()
+    test_windowsize_get()
+    test_bigfile_put()
+    test_bigfile_get()
+    test_combined_options_put()
+    test_combined_options_get()
+
+
 def run_test():
     print("--- Compilation ---")
     subprocess.check_call(["make"])
@@ -723,23 +911,10 @@ def run_test():
     time.sleep(1)  # Laisser le temps de bind
 
     try:
-        test_error_not_defined()
-        test_error_file_not_found_strict
-        test_error_access_violation_read()
-        test_error_disk_full_simulated()
-        test_error_illegal_opcode()
-        test_error_unknown_tid()
-        test_error_file_exists()
-
-        test_put_small_file()
-        test_get_large_file()
-        test_error_missing_file()
-        test_multiple_512()
-        test_security_access()
-        test_higher_block_number()
-        test_concurrency_get()
-        test_concurrency_put()
-        test_concurrency_rw_lock()
+        test_errors()
+        test_basic()
+        test_concurrency()
+        test_options()
 
     finally:
         srv_proc.terminate()
