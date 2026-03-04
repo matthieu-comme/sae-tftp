@@ -46,12 +46,6 @@ tests: $(OBJ_DIR)/tftp_utils.o
 	@echo "Lancement des tests :"
 	@./$(TEST_NAME)
 
-tests_mono: $(OBJ_DIR)/tftp_utils.o
-	@echo "Compilation des tests..."
-	$(CC) $(CFLAGS) $(TEST_DIR)/test_server_mono.c $(OBJ_DIR)/tftp_utils.o -o $(TEST_NAME)
-	@echo "Lancement des tests :"
-	@./$(TEST_NAME)
-
 clean:
 	@echo "Suppression des objets..."
 	rm -rf $(OBJ_DIR)

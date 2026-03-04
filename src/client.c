@@ -464,8 +464,8 @@ int main(int argc, char **argv)
     {
         fprintf(stderr,
                 "Usage:\n"
-                "  %s get [-b] [-w windowsize] <server_ip> <port> <remote_file> <local_file>\n"
-                "  %s put [-b] [-w windowsize] <server_ip> <port> <local_file> <remote_file>\n",
+                "  %s [-b] [-w windowsize] get <server_ip> <port> <remote_file> <local_file>\n"
+                "  %s [-b] [-w windowsize] put <server_ip> <port> <local_file> <remote_file>\n",
                 argv[0], argv[0]);
         return 1;
     }

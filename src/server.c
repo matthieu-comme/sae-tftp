@@ -498,6 +498,7 @@ void handle_new_connection(int main_sock, const char *root_dir)
         else // sinon envoie DATA 1
         {
             new_c->block_32 = 1;
+            new_c->block = 1;
             uint8_t file_data[DATA_SIZE];
             size_t r = fread(file_data, 1, DATA_SIZE, new_c->fp);
             int len = build_data(new_c->last_packet, sizeof(new_c->last_packet), 1, file_data, r);

@@ -17,11 +17,15 @@ SERVER_FILE = "./tftp_server"
 CLIENT_FILE = "./tftp_client"
 
 
-def setup():
+def cleanup():
     if os.path.exists(ROOT_SRV):
         shutil.rmtree(ROOT_SRV)
     if os.path.exists(ROOT_CLI):
         shutil.rmtree(ROOT_CLI)
+
+
+def setup():
+    cleanup()
     os.makedirs(ROOT_SRV)
     os.makedirs(ROOT_CLI)
 
@@ -112,6 +116,7 @@ def test_error_access_violation_read():
 
     os.chmod(path, 0o644)  # Remise des droits pour le nettoyage
     if ret != 0:
+        os.remove("out.bin")
         print(" -> OK (Le serveur a refusé la lecture du fichier protégé)")
     else:
         raise Exception("Le serveur aurait dû échouer sur le fichier sans droits")
@@ -320,13 +325,15 @@ def test_get_large_file():
 def test_error_missing_file():
     print("[TEST 3] GET missing file")
     ret = subprocess.call(
-        [CLIENT_FILE, "get", SERVER_IP, str(SERVER_PORT), "ghost.bin", "  .out"],
+        [CLIENT_FILE, "get", SERVER_IP, str(SERVER_PORT), "ghost.bin", "toto.out"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     if ret == 0:
         print(" -> WARNING: Le client aurait dû retourner une erreur")
     else:
+        if os.path.exists("toto.out"):
+            os.remove("toto.out")
         print(" -> OK (Code retour erreur détecté)")
 
 
@@ -500,8 +507,6 @@ def test_concurrency_put():
     sz_src = os.path.getsize(src_big)
     sz_dst = os.path.getsize(dst_big)
 
-    print(f" -> Client 1 (Gros) : Source {sz_src} octets | Reçu {sz_dst} octets")
-
     if sz_src != sz_dst:
         raise Exception(f"Erreur Taille Client 1 ! ({sz_src} vs {sz_dst})")
     if md5(src_big) != md5(dst_big):
@@ -510,7 +515,6 @@ def test_concurrency_put():
         )
     sz_src = os.path.getsize(src_small_1)
     sz_dst = os.path.getsize(dst_small_1)
-    print(f" -> Client 2 (Petit) : Source {sz_src} octets | Reçu {sz_dst} octets")
 
     if sz_src != sz_dst:
         raise Exception(f"Erreur Taille Client 2 ! ({sz_src} vs {sz_dst})")
@@ -520,8 +524,6 @@ def test_concurrency_put():
 
     sz_src = os.path.getsize(src_small_2)
     sz_dst = os.path.getsize(dst_small_2)
-
-    print(f" -> Client 3 (Moyen) : Source {sz_src} octets | Reçu {sz_dst} octets")
 
     if sz_src != sz_dst:
         raise Exception(f"Erreur Taille Client 3 ! ({sz_src} vs {sz_dst})")
@@ -596,17 +598,10 @@ def test_concurrency_get():
         raise Exception("Client 3 (Petit 2) a échoué")
 
     # Vérification des tailles et des hash MD5
-    sz_src_big = os.path.getsize(src_big)
-    sz_dst_big = os.path.getsize(dst_big)
-    print(
-        f" -> Client 1 (Gros)  : Source {sz_src_big} octets | Reçu {sz_dst_big} octets"
-    )
+
     if md5(src_big) != md5(dst_big):
         raise Exception("Corruption données (Client 1 - GET)")
 
-    sz_src_s1 = os.path.getsize(src_small_1)
-    sz_dst_s1 = os.path.getsize(dst_small_1)
-    print(f" -> Client 2 (Petit) : Source {sz_src_s1} octets | Reçu {sz_dst_s1} octets")
     if md5(src_small_1) != md5(dst_small_1):
         raise Exception("Corruption données (Client 2 - GET)")
 
@@ -919,6 +914,7 @@ def run_test():
     finally:
         srv_proc.terminate()
         srv_proc.wait()
+        cleanup()
         print("--- Fin des tests ---")
 
 
