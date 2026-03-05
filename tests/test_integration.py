@@ -1,7 +1,3 @@
-# ================= tests_integration.py =================
-# Auteur : Gemini
-# Executer ce script compile les fichiers nécessaires et lance automatiquement les tests
-
 import subprocess
 import time
 import os
@@ -43,115 +39,12 @@ def md5(fname):
     return hash_md5.hexdigest()
 
 
-def test_error_illegal_opcode():
-    print("[TEST ERROR 4] Illegal Opcode")
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(2)
-
-    # Paquet malformé : Opcode 99 (inconnu)
-    packet = b"\x00\x63" + b"test.bin\x00" + b"octet\x00"
-    sock.sendto(packet, (SERVER_IP, SERVER_PORT))
-
-    try:
-        data, _ = sock.recvfrom(516)
-        opcode = int.from_bytes(data[:2], "big")
-        err_code = int.from_bytes(data[2:4], "big")
-
-        if opcode == 5 and err_code == 4:
-            print(" -> OK (Erreur 4 reçue)")
-        else:
-            raise Exception(f"Attendu Erreur 4, reçu Opcode {opcode} Code {err_code}")
-    except socket.timeout:
-        raise Exception("Le serveur n'a pas répondu à l'opcode invalide")
-    finally:
-        sock.close()
-
-
-def test_error_unknown_tid():
-    print("[TEST ERROR 5] Unknown TID (Intrusion)")
-
-    # 1. On initialise une session normale (WRQ) avec un premier socket
-    sock_legit = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock_legit.settimeout(2)
-    wrq = b"\x00\x02" + b"ghost.bin\x00" + b"octet\x00"
-    sock_legit.sendto(wrq, (SERVER_IP, SERVER_PORT))
-
-    # On récupère le port de session (TID) choisi par le serveur
-    ack0, tid_addr = sock_legit.recvfrom(516)
-
-    # 2. Un DEUXIÈME socket (l'intrus) essaie d'envoyer un DATA 1 au même TID
-    sock_intruder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock_intruder.settimeout(2)
-    data1 = b"\x00\x03\x00\x01" + b"hello"
-    sock_intruder.sendto(data1, tid_addr)
-
-    try:
-        resp, _ = sock_intruder.recvfrom(516)
-        opcode = int.from_bytes(resp[:2], "big")
-        err_code = int.from_bytes(resp[2:4], "big")
-
-        if opcode == 5 and err_code == 5:
-            print(" -> OK (Erreur 5 envoyée à l'intrus)")
-        else:
-            raise Exception(f"L'intrus aurait dû recevoir Erreur 5, reçu {err_code}")
-    except socket.timeout:
-        raise Exception("Le serveur n'a pas rejeté l'intrus (Timeout)")
-    finally:
-        sock_legit.close()
-        sock_intruder.close()
-
-
-def test_error_access_violation_read():
-    print("[TEST ERROR 2] Access Violation (Read)")
-    path = f"{ROOT_SRV}/secret.bin"
-    create_file(path, 1)
-    os.chmod(path, 0o000)  # On retire tous les droits
-
-    # Le client doit recevoir une erreur 2 lors du GET
-    ret = subprocess.call(
-        [CLIENT_FILE, "get", SERVER_IP, str(SERVER_PORT), "secret.bin", "out.bin"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-    )
-
-    os.chmod(path, 0o644)  # Remise des droits pour le nettoyage
-    if ret != 0:
-        os.remove("out.bin")
-        print(" -> OK (Le serveur a refusé la lecture du fichier protégé)")
-    else:
-        raise Exception("Le serveur aurait dû échouer sur le fichier sans droits")
-
-
-def test_error_disk_full_simulated():
-    print("[TEST ERROR 3] Disk Full / Write Error")
-    # On crée un sous-dossier protégé dans le serveur
-    protected_dir = f"{ROOT_SRV}/readonly_dir"
-    if not os.path.exists(protected_dir):
-        os.makedirs(protected_dir)
-    os.chmod(protected_dir, 0o555)  # Lecture/Exécution seulement (pas d'écriture)
-
-    src = f"{ROOT_CLI}/data.bin"
-    create_file(src, 1)
-
-    # Tentative de PUT dans le dossier protégé
-    ret = subprocess.call(
-        [CLIENT_FILE, "put", SERVER_IP, str(SERVER_PORT), src, "readonly_dir/data.bin"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-    )
-
-    if ret != 0:
-        print(" -> OK (Erreur d'écriture détectée)")
-    else:
-        raise Exception("Le serveur a réussi à écrire dans un répertoire protégé !")
-
-
 def test_error_not_defined():
     print("[TEST ERROR 0] Not Defined (Custom message)")
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(2)
 
-    # Chemin dangereux pour forcer safe_name() à échouer
+    # chemin dangereux pour forcer safe_name() à échouer
     rrq = b"\x00\x01" + b"../etc/passwd\x00" + b"octet\x00"
     sock.sendto(rrq, (SERVER_IP, SERVER_PORT))
 
@@ -191,15 +84,114 @@ def test_error_file_not_found_strict():
         sock.close()
 
 
+def test_error_access_violation_read():
+    print("[TEST ERROR 2] Access Violation (Read)")
+    path = f"{ROOT_SRV}/secret.bin"
+    create_file(path, 1)
+    os.chmod(path, 0o000)  # retire tous les droits
+
+    ret = subprocess.call(
+        [CLIENT_FILE, "get", SERVER_IP, str(SERVER_PORT), "secret.bin", "out.bin"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+    os.chmod(path, 0o644)  # pour le remove
+    if ret != 0:
+        os.remove("out.bin")
+        print(" -> OK (Le serveur a refusé la lecture du fichier protégé)")
+    else:
+        raise Exception("Le serveur aurait dû échouer sur le fichier sans droits")
+
+
+def test_error_disk_full_simulated():
+    print("[TEST ERROR 3] Disk Full / Write Error")
+    # crée un sous-dossier protégé dans le serveur
+    protected_dir = f"{ROOT_SRV}/readonly_dir"
+    if not os.path.exists(protected_dir):
+        os.makedirs(protected_dir)
+    os.chmod(protected_dir, 0o555)  # rx mais pas w
+
+    src = f"{ROOT_CLI}/data.bin"
+    create_file(src, 1)
+
+    ret = subprocess.call(
+        [CLIENT_FILE, "put", SERVER_IP, str(SERVER_PORT), src, "readonly_dir/data.bin"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+    if ret != 0:
+        print(" -> OK (Erreur d'écriture détectée)")
+    else:
+        raise Exception("Le serveur a réussi à écrire dans un répertoire protégé !")
+
+
+def test_error_illegal_opcode():
+    print("[TEST ERROR 4] Illegal Opcode")
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(2)
+
+    # opcode 99 (inconnu)
+    packet = b"\x00\x63" + b"test.bin\x00" + b"octet\x00"
+    sock.sendto(packet, (SERVER_IP, SERVER_PORT))
+
+    try:
+        data, _ = sock.recvfrom(516)
+        opcode = int.from_bytes(data[:2], "big")
+        err_code = int.from_bytes(data[2:4], "big")
+
+        if opcode == 5 and err_code == 4:
+            print(" -> OK (Erreur 4 reçue)")
+        else:
+            raise Exception(f"Attendu Erreur 4, reçu Opcode {opcode} Code {err_code}")
+    except socket.timeout:
+        raise Exception("Le serveur n'a pas répondu à l'opcode invalide")
+    finally:
+        sock.close()
+
+
+def test_error_unknown_tid():
+    print("[TEST ERROR 5] Unknown TID (Intrusion)")
+
+    sock_legit = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock_legit.settimeout(2)
+    wrq = b"\x00\x02" + b"ghost.bin\x00" + b"octet\x00"
+    sock_legit.sendto(wrq, (SERVER_IP, SERVER_PORT))
+
+    ack0, tid_addr = sock_legit.recvfrom(516)
+
+    # l'intrus essaie d'envoyer un DATA 1 au même TID
+    sock_intruder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock_intruder.settimeout(2)
+    data1 = b"\x00\x03\x00\x01" + b"hello"
+    sock_intruder.sendto(data1, tid_addr)
+
+    try:
+        resp, _ = sock_intruder.recvfrom(516)
+        opcode = int.from_bytes(resp[:2], "big")
+        err_code = int.from_bytes(resp[2:4], "big")
+
+        if opcode == 5 and err_code == 5:
+            print(" -> OK (Erreur 5 envoyée à l'intrus)")
+        else:
+            raise Exception(f"L'intrus aurait dû recevoir Erreur 5, reçu {err_code}")
+    except socket.timeout:
+        raise Exception("Le serveur n'a pas rejeté l'intrus (Timeout)")
+    finally:
+        sock_legit.close()
+        sock_intruder.close()
+
+
 def test_error_file_exists():
     print("[TEST ERROR 6] File Already Exists")
     path = f"{ROOT_SRV}/already_here.bin"
-    create_file(path, 1)  # Création préalable
+    create_file(path, 1)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(2)
 
-    # Tentative d'écrasement via un WRQ
+    # écrasement via WRQ
     wrq = b"\x00\x02" + b"already_here.bin\x00" + b"octet\x00"
     sock.sendto(wrq, (SERVER_IP, SERVER_PORT))
 
@@ -278,22 +270,20 @@ def test_put_small_file():
     print("[TEST 1] PUT small file")
     src = f"{ROOT_CLI}/upload.bin"
     dst = f"{ROOT_SRV}/upload.bin"
-    create_file(src, 1)  # 1KB
+    create_file(src, 1)
 
     subprocess.check_call(
         [CLIENT_FILE, "put", SERVER_IP, str(SERVER_PORT), src, "upload.bin"]
     )
 
     print(" -> Client fini. Attente écriture disque...")
-    time.sleep(3)  # On laisse 3 secondes au serveur pour flusher/fermer le fichier
+    time.sleep(1)
 
     if not os.path.exists(dst):
         raise Exception("Fichier non reçu par serveur")
 
-    # DEBUG : Affiche les tailles pour comparer
     s_src = os.path.getsize(src)
     s_dst = os.path.getsize(dst)
-    print(f" -> Taille Source: {s_src} octets | Taille Reçue: {s_dst} octets")
 
     if s_src != s_dst:
         raise Exception(f"Tailles différentes ! ({s_src} vs {s_dst})")
@@ -308,7 +298,7 @@ def test_get_large_file():
     print("[TEST 2] GET large file (5MB)")
     src = f"{ROOT_SRV}/download.bin"
     dst = f"{ROOT_CLI}/download.bin"
-    create_file(src, 5120)  # 5MB
+    create_file(src, 5120)
 
     subprocess.check_call(
         [CLIENT_FILE, "get", SERVER_IP, str(SERVER_PORT), "download.bin", dst]
@@ -344,18 +334,12 @@ def test_multiple_512():
     dst = f"{ROOT_SRV}/boundary.bin"
     create_file(src, 1)  # 1KB exact (1024 octets)
 
-    # Si le client gère mal, il attendra un dernier paquet qui ne vient jamais -> Timeout
     subprocess.check_call(
         [CLIENT_FILE, "put", SERVER_IP, str(SERVER_PORT), src, "boundary.bin"]
     )
 
     print(" -> Client fini. Attente écriture...")
-    time.sleep(3)
-
-    # DEBUG : Affiche les tailles pour comparer
-    s_src = os.path.getsize(src)
-    s_dst = os.path.getsize(dst)
-    print(f" -> Taille Source: {s_src} octets | Taille Reçue: {s_dst} octets")
+    time.sleep(1)
 
     if not os.path.exists(dst):
         raise Exception("Fichier boundary non reçu")
@@ -372,17 +356,13 @@ def test_security_access():
     # On essaie de lire le Makefile qui est un cran au-dessus du dossier serveur
     dst = f"{ROOT_CLI}/hacked_makefile"
 
-    # On s'attend à ce que le serveur refuse (Code retour != 0 ou fichier vide/erreur)
     ret = subprocess.call(
         [CLIENT_FILE, "get", SERVER_IP, str(SERVER_PORT), "../Makefile", dst],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
 
-    # Vérifions que le serveur a envoyé une erreur (le client devrait retourner != 0)
-    # OU BIEN que le client a créé un fichier contenant le message d'erreur TFTP
     if ret == 0 and os.path.exists(dst) and os.path.getsize(dst) > 0:
-        # Si on a réussi à télécharger le Makefile, c'est une FAIL
         with open(dst, "rb") as f:
             content = f.read(10)
         if b"CC =" in content or b"gcc" in content:  # contenu typique Makefile
@@ -398,8 +378,7 @@ def test_higher_block_number():
     src = f"{ROOT_SRV}/huge.bin"
     dst = f"{ROOT_CLI}/huge.bin"
 
-    # Attention : création fichier un peu longue
-    create_file(src, 50000)
+    create_file(src, 50_000)
 
     start_t = time.time()
     subprocess.check_call(
@@ -417,7 +396,6 @@ def test_higher_block_number():
 def test_concurrency_put():
     print("\n[TEST 7] CONCURRENCY PUT: 3 Clients simultanés")
 
-    # 1. Préparation des fichiers
     # Un "Gros" fichier pour occuper le serveur (ex: 20 Mo)
     # Deux "Petits" fichiers pour voir s'ils passent pendant que le gros tourne
     src_big = f"{ROOT_CLI}/big_concurrent.bin"
@@ -435,8 +413,6 @@ def test_concurrency_put():
     print(" -> Lancement des 3 processus clients en parallèle...")
     start_time = time.time()
 
-    # On utilise Popen au lieu de check_call pour ne pas bloquer le script python
-    # Client 1 : Upload GROS fichier
     p1 = subprocess.Popen(
         [
             CLIENT_FILE,
@@ -450,10 +426,8 @@ def test_concurrency_put():
         stderr=subprocess.PIPE,
     )
 
-    # Petite pause pour être sûr que P1 a commencé et occupe le serveur
     time.sleep(0.2)
 
-    # Client 2 : Upload PETIT fichier
     p2 = subprocess.Popen(
         [
             CLIENT_FILE,
@@ -467,7 +441,6 @@ def test_concurrency_put():
         stderr=subprocess.PIPE,
     )
 
-    # Client 3 : Upload MOYEN fichier
     p3 = subprocess.Popen(
         [
             CLIENT_FILE,
@@ -481,7 +454,6 @@ def test_concurrency_put():
         stderr=subprocess.PIPE,
     )
 
-    # On attend que tout le monde finisse
     exit1 = p1.wait()
     exit2 = p2.wait()
     exit3 = p3.wait()
@@ -489,7 +461,6 @@ def test_concurrency_put():
     end_time = time.time()
     print(f" -> Tous les clients ont fini en {end_time - start_time:.2f} secondes.")
 
-    # Vérification des codes de retour
     if exit1 != 0:
         print(f"STDERR Client 1: {p1.stderr.read().decode()}")
         raise Exception("Client 1 (Gros) a échoué")
@@ -500,10 +471,8 @@ def test_concurrency_put():
         print(f"STDERR Client 3: {p3.stderr.read().decode()}")
         raise Exception("Client 3 (Moyen) a échoué")
 
-    # Attente écriture disque serveur (sécurité)
-    time.sleep(3)
+    time.sleep(2)
 
-    # Vérification MD5
     sz_src = os.path.getsize(src_big)
     sz_dst = os.path.getsize(dst_big)
 
@@ -537,17 +506,14 @@ def test_concurrency_put():
 def test_concurrency_get():
     print("\n[TEST 8] CONCURRENCY GET: 3 Clients simultanés")
 
-    # Fichiers sources (sur le serveur)
     src_big = f"{ROOT_SRV}/big_get.bin"
     src_small_1 = f"{ROOT_SRV}/small_get_1.bin"
     src_small_2 = f"{ROOT_SRV}/small_get_2.bin"
 
-    # Fichiers de destination (téléchargés par les clients)
     dst_big = f"{ROOT_CLI}/big_get.bin"
     dst_small_1 = f"{ROOT_CLI}/small_get_1.bin"
     dst_small_2 = f"{ROOT_CLI}/small_get_2.bin"
 
-    # Création des fichiers sur le serveur avant le test
     create_file(src_big, 20480)  # 20 Mo
     create_file(src_small_1, 1)  # 1 Ko
     create_file(src_small_2, 2)  # 2 Ko
@@ -555,8 +521,6 @@ def test_concurrency_get():
     print(" -> Lancement des 3 processus clients en parallèle (GET)...")
     start_time = time.time()
 
-    # Lancement des clients en mode GET
-    # Syntaxe client : ./tftp_client get <server_ip> <port> <remote_file> <local_file>
     p1 = subprocess.Popen(
         [CLIENT_FILE, "get", SERVER_IP, str(SERVER_PORT), "big_get.bin", dst_big]
     )
@@ -581,7 +545,6 @@ def test_concurrency_get():
         ]
     )
 
-    # Attente de la fin des 3 processus
     ret1 = p1.wait()
     ret2 = p2.wait()
     ret3 = p3.wait()
@@ -589,15 +552,12 @@ def test_concurrency_get():
     elapsed = time.time() - start_time
     print(f" -> Tous les clients ont fini en {elapsed:.2f} secondes.")
 
-    # Vérification des codes de retour
     if ret1 != 0:
         raise Exception("Client 1 (Gros) a échoué")
     if ret2 != 0:
         raise Exception("Client 2 (Petit 1) a échoué")
     if ret3 != 0:
         raise Exception("Client 3 (Petit 2) a échoué")
-
-    # Vérification des tailles et des hash MD5
 
     if md5(src_big) != md5(dst_big):
         raise Exception("Corruption données (Client 1 - GET)")
@@ -621,11 +581,8 @@ def test_concurrency_rw_lock():
     # --- SCENARIO A : 1 WRQ en cours bloque les autres RRQ et WRQ ---
     print(" -> Scénario A : WRQ actif bloque les autres requêtes...")
     src_big_put = f"{ROOT_CLI}/shared_put.bin"
-    create_file(
-        src_big_put, 102400
-    )  # 20 Mo, assez long pour que les autres requêtes arrivent pendant le transfert
+    create_file(src_big_put, 102400)
 
-    # Lancement du WRQ (PUT) principal
     p_put_main = subprocess.Popen(
         [
             CLIENT_FILE,
@@ -639,9 +596,9 @@ def test_concurrency_rw_lock():
         stderr=subprocess.PIPE,
     )
 
-    time.sleep(0.5)  # Laisse le temps au serveur d'ouvrir le fichier et poser le verrou
+    time.sleep(0.5)
 
-    # Tentative d'un GET (RRQ) concurrent sur le même fichier -> DOIT ÉCHOUER
+    # GET (RRQ) concurrent sur le même fichier -> DOIT ÉCHOUER
     dst_get_blocked = f"{ROOT_CLI}/blocked_get.bin"
     p_get_blocked = subprocess.Popen(
         [
@@ -656,7 +613,7 @@ def test_concurrency_rw_lock():
         stderr=subprocess.PIPE,
     )
 
-    # Tentative d'un PUT (WRQ) concurrent sur le même fichier -> DOIT ÉCHOUER
+    # PUT (WRQ) concurrent sur le même fichier -> DOIT ÉCHOUER
     src_small_put = f"{ROOT_CLI}/small_put.bin"
     create_file(src_small_put, 1)
     p_put_blocked = subprocess.Popen(
@@ -672,7 +629,6 @@ def test_concurrency_rw_lock():
         stderr=subprocess.PIPE,
     )
 
-    # Vérification des échecs (le client TFTP doit retourner un code d'erreur != 0 suite au paquet ERROR du serveur)
     if p_get_blocked.wait() == 0:
         raise Exception(
             "Échec Scénario A : Le GET concurrent a réussi alors qu'un PUT était en cours !"
@@ -682,7 +638,6 @@ def test_concurrency_rw_lock():
             "Échec Scénario A : Le 2eme PUT concurrent a réussi alors qu'un PUT était en cours !"
         )
 
-    # Vérification de la réussite du PUT principal
     if p_put_main.wait() != 0:
         raise Exception("Le PUT principal a échoué.")
     print("    Scénario A validé !")
@@ -693,9 +648,8 @@ def test_concurrency_rw_lock():
         " -> Scénario B : RRQ actif bloque WRQ mais autorise les lecteurs multiples..."
     )
     src_big_get = f"{ROOT_SRV}/shared_get.bin"
-    create_file(src_big_get, 307200)  # 300 Mo
+    create_file(src_big_get, 307200)
 
-    # Lancement du RRQ (GET) principal
     dst_get_main = f"{ROOT_CLI}/shared_get_main.bin"
     p_get_main = subprocess.Popen(
         [
@@ -740,7 +694,6 @@ def test_concurrency_rw_lock():
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
     )
-    # Vérifications
     if p_put_blocked_b.wait() == 0:
         raise Exception(
             "Échec Scénario B : Le PUT a réussi alors qu'un GET était en cours !"
@@ -896,7 +849,6 @@ def run_test():
 
     setup()
 
-    # 1. Lancement Serveur
     print(f"--- Lancement Serveur (Port {SERVER_PORT}) ---")
     srv_proc = subprocess.Popen(
         [SERVER_FILE, str(SERVER_PORT), ROOT_SRV],

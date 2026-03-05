@@ -157,19 +157,6 @@ void send_data(int sockfd, sockaddr_in *addr, unsigned char *data, size_t data_s
     }
     printf("Transfert terminé avec succès\n");
 }
-/*
-int split_data(FILE *file, char *buffer)
-{
-    char c;
-    int data_len = 0;
-    while ((c = fgetc(file)) != EOF && data_len < 512)
-    {
-        buffer[data_len] = c;
-    }
-    // bzero(buffer);
-    return data_len;
-}
-    */
 
 int safe_name(const char *name)
 {

@@ -16,7 +16,7 @@ TEST_DIR = tests
 COMMON_SRCS = $(SRC_DIR)/sockets.c \
               $(SRC_DIR)/tftp_utils.c
 
-# sources client/serveur (chacun contient SON main)
+# sources client/serveur (chacun son main)
 CLIENT_SRCS = $(SRC_DIR)/client.c
 SERVER_SRCS = $(SRC_DIR)/server.c
 

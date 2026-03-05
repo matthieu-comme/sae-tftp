@@ -414,13 +414,6 @@ int tftp_client_put(const char *server_ip, uint16_t server_port,
             else
             {
                 continue;
-                /*
-                // si ack inferieur reçu -> on recule dans le fichier
-                fseeko(in, file_pos, SEEK_SET);
-                block -= window_count;
-                is_last_block = 0;
-                break;
-                */
             }
         }
 

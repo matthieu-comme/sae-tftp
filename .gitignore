@@ -1,5 +1,4 @@
 .vscode
-test_unit
 obj/
 run_tests
 tftp_server
@@ -7,5 +6,3 @@ tftp_server_*
 tftp_client
 test_cli_dir
 test_srv_dir
-.out
-ghost.out
